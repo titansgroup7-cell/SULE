@@ -92,17 +92,9 @@ PAYMENT_NUMBER = os.environ.get("PAYMENT_NUMBER", "37912416")
 PAYMENT_NAME = os.environ.get("PAYMENT_NAME", "Matondo Maduhu")
 PAYMENT_NETWORK = os.environ.get("PAYMENT_NETWORK", "Vodacom")
 
-# Pesapal API 3.0 (badala ya ClickPesa)
-# Jisajili: https://developer.pesapal.com  → Consumer Key + Consumer Secret
-PESAPAL_CONSUMER_KEY = os.environ.get("PESAPAL_CONSUMER_KEY", "")
-PESAPAL_CONSUMER_SECRET = os.environ.get("PESAPAL_CONSUMER_SECRET", "")
-PESAPAL_IPN_ID = os.environ.get("PESAPAL_IPN_ID", "")  # notification_id baada ya kusajili IPN
-# live = production | sandbox = demo
-PESAPAL_ENV = (os.environ.get("PESAPAL_ENV") or "live").strip().lower()
-if PESAPAL_ENV in ("sandbox", "demo", "test"):
-    PESAPAL_BASE = "https://cybqa.pesapal.com/pesapalv3/api"
-else:
-    PESAPAL_BASE = "https://pay.pesapal.com/v3/api"
+# ClickPesa (USSD push — Voda, Tigo, Airtel, Halotel n.k.)
+CLICKPESA_CLIENT_ID = os.environ.get("CLICKPESA_CLIENT_ID", "")
+CLICKPESA_API_KEY = os.environ.get("CLICKPESA_API_KEY", "")
 
 # Supabase Storage (faili zote: picha, PDF, slides)
 # Project Settings → API → Project URL + service_role key (secret)
@@ -416,7 +408,7 @@ def message_to_dict(msg):
 
 
 def status_label_sw(status):
-    """Jina la status kwa Kiswahili (Pesapal + workflow)."""
+    """Jina la status kwa Kiswahili (ClickPesa + workflow)."""
     if not status:
         return "—"
     mapping = {
@@ -624,126 +616,45 @@ def save_agency_file(file_storage, prefix="doc"):
     return storage_upload(file_storage, f"agency/{filename}")
 
 
-def pesapal_enabled():
-    return bool(PESAPAL_CONSUMER_KEY and PESAPAL_CONSUMER_SECRET)
+def clickpesa_enabled():
+    return bool(CLICKPESA_CLIENT_ID and CLICKPESA_API_KEY)
 
 
-def get_pesapal_token():
-    """OAuth token ya Pesapal (inaisha baada ya ~5 dakika)."""
-    url = f"{PESAPAL_BASE}/Auth/RequestToken"
-    headers = {"Accept": "application/json", "Content-Type": "application/json"}
-    payload = {
-        "consumer_key": PESAPAL_CONSUMER_KEY,
-        "consumer_secret": PESAPAL_CONSUMER_SECRET,
-    }
-    response = requests.post(url, json=payload, headers=headers, timeout=20)
-    data = response.json() if response.content else {}
-    token = data.get("token")
-    if response.status_code == 200 and token:
-        return token
-    raise Exception(f"Imeshindwa kupata Pesapal token: {data}")
-
-
-def get_pesapal_ipn_id(token=None):
-    """Rudisha PESAPAL_IPN_ID kutoka env, au jaribu kusajili IPN URL mara moja."""
-    if PESAPAL_IPN_ID:
-        return PESAPAL_IPN_ID
-    # Auto-register (inatumika mara ya kwanza tu; baada yake weka env)
-    token = token or get_pesapal_token()
-    # callback/ipn path yetu
-    try:
-        base = request.host_url.rstrip("/") if request else ""
-    except Exception:
-        base = ""
-    ipn_url = f"{base}/webhook/pesapal" if base else ""
-    if not ipn_url or "localhost" in ipn_url or "127.0.0.1" in ipn_url:
-        raise Exception(
-            "Weka PESAPAL_IPN_ID kwenye environment. "
-            "Sajili IPN kwenye Pesapal dashboard au call RegisterIPN na URL yako ya live."
-        )
-    url = f"{PESAPAL_BASE}/URLSetup/RegisterIPN"
+def get_clickpesa_token():
+    url = "https://api.clickpesa.com/third-parties/generate-token"
     headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
+        "client-id": CLICKPESA_CLIENT_ID,
+        "api-key": CLICKPESA_API_KEY,
+    }
+    response = requests.post(url, headers=headers, timeout=15)
+    data = response.json() if response.content else {}
+    if response.status_code == 200 and "token" in data:
+        return data["token"]
+    raise Exception(f"Imeshindwa kupata token: {data}")
+
+
+def initiate_clickpesa_ussd(amount, order_reference, phone):
+    """Anzisha USSD push. Inarudisha (ok: bool, data: dict)."""
+    token = get_clickpesa_token()
+    url = "https://api.clickpesa.com/third-parties/payments/initiate-ussd-push-request"
+    headers = {
+        "Authorization": token,
         "Content-Type": "application/json",
     }
-    payload = {"url": ipn_url, "ipn_notification_type": "POST"}
-    response = requests.post(url, json=payload, headers=headers, timeout=20)
-    data = response.json() if response.content else {}
-    nid = data.get("ipn_id") or data.get("notification_id") or data.get("id")
-    if nid:
-        print(f"Pesapal IPN registered: {nid} → weka PESAPAL_IPN_ID={nid}")
-        return str(nid)
-    raise Exception(f"Imeshindwa kusajili IPN: {data}")
-
-
-def submit_pesapal_order(
-    merchant_ref,
-    amount,
-    description,
-    callback_url,
-    phone=None,
-    email=None,
-    first_name=None,
-    last_name=None,
-):
-    """
-    SubmitOrderRequest → {order_tracking_id, merchant_reference, redirect_url}
-    """
-    token = get_pesapal_token()
-    notification_id = get_pesapal_ipn_id(token)
-    url = f"{PESAPAL_BASE}/Transactions/SubmitOrderRequest"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
-    billing = {
-        "country_code": "TZ",
-        "first_name": (first_name or "Customer")[:50],
-        "last_name": (last_name or "User")[:50],
-        "line_1": "Tanzania",
-    }
-    if phone:
-        billing["phone_number"] = normalize_phone(phone)
-    if email:
-        billing["email_address"] = email
-    if not phone and not email:
-        billing["phone_number"] = "255700000000"
-
     payload = {
-        "id": str(merchant_ref)[:50],
+        "amount": str(amount),
         "currency": "TZS",
-        "amount": float(amount),
-        "description": (description or "Malipo")[:100],
-        "callback_url": callback_url,
-        "notification_id": notification_id,
-        "billing_address": billing,
+        "orderReference": str(order_reference)[:50],
+        "phoneNumber": normalize_phone(phone),
     }
-    response = requests.post(url, json=payload, headers=headers, timeout=25)
+    response = requests.post(url, json=payload, headers=headers, timeout=20)
     data = response.json() if response.content else {}
-    if response.status_code in (200, 201) and data.get("redirect_url"):
-        return data
-    raise Exception(clean_payment_error(data, f"Pesapal SubmitOrder failed: {data}"))
-
-
-def get_pesapal_transaction_status(order_tracking_id):
-    """GetTransactionStatus → status details."""
-    token = get_pesapal_token()
-    url = f"{PESAPAL_BASE}/Transactions/GetTransactionStatus?orderTrackingId={order_tracking_id}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-    }
-    response = requests.get(url, headers=headers, timeout=20)
-    data = response.json() if response.content else {}
-    if response.status_code == 200:
-        return data
-    raise Exception(f"GetTransactionStatus failed: {data}")
+    ok = response.status_code in (200, 201)
+    return ok, data
 
 
 def clean_payment_error(data, fallback="Malipo yameshindwa. Jaribu tena."):
-    """Toa ujumbe safi wa kibinadamu kutoka Pesapal / exception — si dict ghafi."""
+    """Toa ujumbe safi wa kibinadamu kutoka ClickPesa / exception — si dict ghafi."""
     msg = ""
     if data is None:
         msg = ""
@@ -1164,7 +1075,7 @@ def settings():
 
 
 # ---------------------------------------------------------------------------
-# Bundle / Order + ONLINE PAYMENT (Pesapal)
+# Bundle / Order + ONLINE PAYMENT (ClickPesa)
 # ---------------------------------------------------------------------------
 @app.route("/order", methods=["GET", "POST"])
 @login_required
@@ -1229,37 +1140,37 @@ def order():
         new_order.order_reference = order_ref
         db.session.commit()
 
-        if pesapal_enabled() and price > 0:
+        if clickpesa_enabled() and price > 0:
             try:
-                callback = url_for("pesapal_callback", _external=True)
-                data = submit_pesapal_order(
-                    merchant_ref=order_ref,
-                    amount=price,
-                    description=f"Bando {amount} → {target_phone}",
-                    callback_url=callback,
-                    phone=payment_phone,
-                    email=getattr(user, "email", None),
-                    first_name=(user.username or "Customer")[:40],
-                )
-                # hifadhi tracking id kwenye note kwa debug (optional)
-                tracking = data.get("order_tracking_id") or ""
-                if tracking:
-                    new_order.note = (new_order.note or "") + f" | pesapal:{tracking}"
-                    db.session.commit()
-                redirect_url = data.get("redirect_url")
-                flash(
-                    "Unaelekezwa kwenye ukurasa wa malipo wa Pesapal. "
-                    "Chagua M-Pesa / Tigo / Airtel au kadi kisha maliza malipo.",
-                    "success",
-                )
-                return redirect(redirect_url)
+                ok, data = initiate_clickpesa_ussd(price, order_ref, payment_phone)
+                if ok:
+                    flash(
+                        "Asante! Ombi la malipo limeshushwa. Angalia simu yako na uingize PIN. "
+                        "Unaweza kufuatilia hali ya oda yako hapa chini.",
+                        "success",
+                    )
+                    return redirect(url_for("profile"))
+                reason = clean_payment_error(data, "Malipo yameshindwa kuanzishwa.")
+                new_order.status = "failed"
+                new_order.fail_reason = reason
+                db.session.commit()
+                try:
+                    send_push_to_admins(
+                        "Malipo yameshindwa kuanzishwa",
+                        f"Oda #{new_order.id}: {reason[:80]}",
+                        url="/dashboard",
+                        tag=f"order-fail-{new_order.id}",
+                    )
+                except Exception as _e:
+                    print(f"order fail push: {_e}")
+                flash(f"Malipo yameshindwa kuanzishwa: {reason}", "error")
             except Exception as e:
                 new_order.status = "failed"
                 new_order.fail_reason = clean_payment_error(str(e), "Hitilafu ya malipo.")
                 db.session.commit()
                 try:
                     send_push_to_admins(
-                        "Hitilafu ya malipo (Pesapal)",
+                        "Hitilafu ya malipo",
                         f"Oda #{new_order.id}: {str(e)[:80]}",
                         url="/dashboard",
                         tag=f"order-fail-{new_order.id}",
@@ -1349,7 +1260,7 @@ def update_order_status(order_id):
 
 
 # ---------------------------------------------------------------------------
-# Pesapal IPN + Callback
+# ClickPesa Webhook
 # ---------------------------------------------------------------------------
 def _parse_nakala_pay_ref(order_ref):
     """NKR{id} au NKR{id}T{timestamp} → NakalaRequest au None."""
@@ -1371,13 +1282,13 @@ def _parse_nakala_pay_ref(order_ref):
 
 
 
-def _mark_payment_success(merchant_ref, tracking_id=""):
+
+def _mark_payment_success(merchant_ref, extra=""):
     """Thibitisha malipo yaliyofanikiwa kwa ORD... au NKR..."""
     merchant_ref = (merchant_ref or "").strip()
     if not merchant_ref:
         return False, "no ref"
 
-    # Nakala
     nakala_req = _parse_nakala_pay_ref(merchant_ref)
     if nakala_req:
         if nakala_req.status in ("pending", "awaiting_payment", "payment_failed", "failed"):
@@ -1408,14 +1319,11 @@ def _mark_payment_success(merchant_ref, tracking_id=""):
                 print(f"nakala pay push: {e}")
         return True, "nakala"
 
-    # Oda bando
     order = Order.query.filter_by(order_reference=merchant_ref).first()
     if order:
         if order.status in ("awaiting_payment", "failed"):
             order.status = "pending"
             order.fail_reason = ""
-            if tracking_id and tracking_id not in (order.note or ""):
-                order.note = (order.note or "") + f" | pesapal:{tracking_id}"
             db.session.commit()
             try:
                 send_push_to_admins(
@@ -1486,116 +1394,39 @@ def _mark_payment_failed(merchant_ref, reason="Malipo yameshindwa."):
     return False, "not found"
 
 
-def _process_pesapal_notification(order_tracking_id, merchant_ref):
+@app.route("/webhook/clickpesa", methods=["POST"])
+def clickpesa_webhook():
     """
-    Piga GetTransactionStatus kisha update status.
-    Status codes (Pesapal): 0=INVALID, 1=COMPLETED, 2=FAILED, 3=REVERSED
+    ClickPesa webhook — malipo yanathibitishwa HAPPA.
+    Events: PAYMENT RECEIVED + PAYMENT FAILED
+    Refs: ORD... (bando) | NKR{id} (nakala)
     """
     try:
-        st = get_pesapal_transaction_status(order_tracking_id)
-    except Exception as e:
-        print(f"pesapal status error: {e}")
-        return False, str(e)
-
-    # support both shapes
-    status_code = st.get("status_code")
-    if status_code is None:
-        status_code = st.get("payment_status_description") or st.get("status")
-    payment_status = (st.get("payment_status_description") or st.get("status") or "").upper()
-    message = (st.get("message") or st.get("description") or payment_status or "")[:200]
-
-    # Completed
-    completed = False
-    if status_code in (1, "1", 200, "200"):
-        completed = True
-    if str(payment_status).upper() in ("COMPLETED", "SUCCESS", "SETTLED", "PAID"):
-        completed = True
-
-    failed = False
-    if status_code in (2, "2"):
-        failed = True
-    if str(payment_status).upper() in ("FAILED", "INVALID", "REVERSED"):
-        failed = True
-
-    if not merchant_ref:
-        merchant_ref = st.get("merchant_reference") or ""
-
-    if completed:
-        return _mark_payment_success(merchant_ref, order_tracking_id)
-    if failed:
-        return _mark_payment_failed(merchant_ref, message or "Malipo yameshindwa.")
-    # still pending — usibadilishe
-    return True, "pending"
-
-
-@app.route("/webhook/pesapal", methods=["GET", "POST"])
-def pesapal_webhook():
-    """
-    Pesapal IPN — malipo yanathibitishwa HAPPA (na kwenye callback).
-    Params: OrderTrackingId, OrderMerchantReference, OrderNotificationType
-    """
-    if request.method == "POST":
         data = request.get_json(force=True, silent=True) or {}
-        if not data:
-            data = request.form.to_dict() if request.form else {}
-        tracking = (data.get("OrderTrackingId") or data.get("orderTrackingId") or "").strip()
-        merchant_ref = (data.get("OrderMerchantReference") or data.get("orderMerchantReference") or "").strip()
-    else:
-        tracking = (request.args.get("OrderTrackingId") or "").strip()
-        merchant_ref = (request.args.get("OrderMerchantReference") or "").strip()
+    except Exception:
+        data = {}
 
-    if not tracking:
-        return jsonify({"ok": False, "error": "No OrderTrackingId"}), 400
+    event = (data.get("event") or "").upper()
+    payload = data.get("data") or data
 
-    ok, kind = _process_pesapal_notification(tracking, merchant_ref)
-    # Pesapal inatarajia response yenye orderTrackingId + status
-    return jsonify({
-        "orderNotificationType": "IPNCHANGE",
-        "orderTrackingId": tracking,
-        "orderMerchantReference": merchant_ref,
-        "status": 200 if ok else 500,
-        "ok": ok,
-        "type": kind,
-    }), 200
+    order_ref = (payload.get("orderReference") or payload.get("order_reference") or "").strip()
+    status = (payload.get("status") or "").upper()
+    message = (payload.get("message") or "")[:200]
 
+    if not order_ref:
+        return jsonify({"ok": False, "error": "No orderReference"}), 400
 
-@app.route("/payment/pesapal/callback")
-def pesapal_callback():
-    """
-    User anarudi hapa baada ya kulipa kwenye Pesapal.
-    Thibitisha status tena (IPN inaweza kuwa haijafika bado).
-    """
-    tracking = (request.args.get("OrderTrackingId") or "").strip()
-    merchant_ref = (request.args.get("OrderMerchantReference") or "").strip()
+    paid_ok = event == "PAYMENT RECEIVED" or status in ("SUCCESS", "SETTLED")
+    failed = event == "PAYMENT FAILED" or status == "FAILED"
 
-    if tracking:
-        try:
-            ok, kind = _process_pesapal_notification(tracking, merchant_ref)
-            if kind == "nakala":
-                flash("Malipo yamepokelewa! Ombi lako linashughulikiwa.", "success")
-                nak = _parse_nakala_pay_ref(merchant_ref)
-                if nak:
-                    return redirect(url_for("nakala_detail", req_id=nak.id))
-                return redirect(url_for("my_nakala"))
-            if kind == "order":
-                flash("Malipo yamepokelewa! Oda yako inashughulikiwa.", "success")
-                return redirect(url_for("profile"))
-            if kind == "pending":
-                flash("Malipo yanashughulikiwa. Subiri kidogo — status itasasishwa kiotomatiki.", "info")
-            else:
-                flash("Hatukuweza kuthibitisha malipo bado. Angalia baada ya dakika chache.", "warning")
-        except Exception as e:
-            flash(f"Hitilafu ya kuthibitisha malipo: {clean_payment_error(str(e))}", "error")
-    else:
-        flash("Hakuna taarifa za malipo. Angalia oda/ombi lako.", "warning")
+    if paid_ok:
+        ok, kind = _mark_payment_success(order_ref)
+        return jsonify({"ok": ok, "type": kind}), 200
+    if failed:
+        ok, kind = _mark_payment_failed(order_ref, message)
+        return jsonify({"ok": ok, "type": kind}), 200
 
-    return redirect(url_for("profile"))
-
-
-# Keep old path for safety (redirect)
-@app.route("/webhook/clickpesa", methods=["POST", "GET"])
-def clickpesa_webhook_legacy():
-    return jsonify({"ok": False, "error": "ClickPesa imebadilishwa na Pesapal. Tumia /webhook/pesapal"}), 410
+    return jsonify({"ok": True, "ignored": True}), 200
 
 
 # ---------------------------------------------------------------------------
@@ -3014,37 +2845,46 @@ def nakala_pay():
     session.pop("nakala_draft", None)
 
     price = req.price
-    if pesapal_enabled() and price > 0:
+    if clickpesa_enabled() and price > 0:
         try:
             pay_ref = f"NKR{req.id}"
-            callback = url_for("pesapal_callback", _external=True)
-            data = submit_pesapal_order(
-                merchant_ref=pay_ref,
-                amount=price,
-                description=f"Nakala {req.request_code} ({req.service_type})",
-                callback_url=callback,
-                phone=payment_phone,
-                email=getattr(user, "email", None) if user else None,
-                first_name=(user.username if user else "Customer")[:40],
-            )
-            req.status = "awaiting_payment"
-            db.session.commit()
-            try:
-                send_push_to_admins(
-                    "Nakala — inasubiri malipo",
-                    f"{req.request_code} ({req.service_type})"
-                    + (f" · {req.license_type}" if req.license_type else ""),
-                    url="/dashboard",
-                    tag=f"nakala-wait-{req.id}",
+            ok, data = initiate_clickpesa_ussd(price, pay_ref, payment_phone)
+            if ok:
+                req.status = "awaiting_payment"
+                db.session.commit()
+                try:
+                    send_push_to_admins(
+                        "Nakala — inasubiri malipo",
+                        f"{req.request_code} ({req.service_type})"
+                        + (f" · {req.license_type}" if req.license_type else ""),
+                        url="/dashboard",
+                        tag=f"nakala-wait-{req.id}",
+                    )
+                    send_push_to_user(
+                        req.user_id,
+                        "Ombi la malipo limeshushwa",
+                        "Angalia simu, ingiza PIN. Utajulishwa baada ya ClickPesa kuthibitisha.",
+                        url=f"/nakala/{req.id}",
+                        tag=f"nakala-init-{req.id}",
+                    )
+                except Exception as e:
+                    print(f"nakala pay push: {e}")
+                flash(
+                    "Ombi la malipo limeshushwa! Angalia simu yako na uingize PIN. "
+                    "Status itakuwa «Imelipwa» baada tu ya ClickPesa kuthibitisha.",
+                    "success",
                 )
-            except Exception as e:
-                print(f"nakala pay push: {e}")
+                return redirect(url_for("my_nakala"))
+            req.status = "payment_failed"
+            reason = clean_payment_error(data, "Malipo yameshindwa kuanzishwa.")
+            req.admin_note = reason
+            db.session.commit()
             flash(
-                "Unaelekezwa kwenye ukurasa wa malipo wa Pesapal. "
-                "Chagua njia ya malipo kisha maliza.",
-                "success",
+                f"Malipo yameshindwa. Sababu: {reason} "
+                f"Jaribu tena (Lipa Tena) au lipa manual: "
+                f"{PAYMENT_NETWORK} {PAYMENT_NUMBER}.",
+                "error",
             )
-            return redirect(data["redirect_url"])
         except Exception as e:
             req.status = "payment_failed"
             reason = clean_payment_error(str(e), "Hitilafu ya malipo.")
@@ -3158,7 +2998,7 @@ def nakala_repay(req_id):
         return redirect(url_for("nakala_repay", req_id=req.id))
 
     price = int(req.price or 0)
-    if not (pesapal_enabled() and price > 0):
+    if not (clickpesa_enabled() and price > 0):
         flash(
             f"Lipa manual TSh {price:,} kwa {PAYMENT_NETWORK} {PAYMENT_NUMBER} ({PAYMENT_NAME}).",
             "error",
@@ -3166,27 +3006,37 @@ def nakala_repay(req_id):
         return redirect(url_for("nakala_detail", req_id=req.id))
 
     try:
-        # Reference mpya kila jaribio (lazima unique)
-        pay_ref = f"NKR{req.id}T{int(time.time())}"[:40]
-        callback = url_for("pesapal_callback", _external=True)
-        user = get_current_user()
-        data = submit_pesapal_order(
-            merchant_ref=pay_ref,
-            amount=price,
-            description=f"Nakala repay {req.request_code}",
-            callback_url=callback,
-            phone=payment_phone,
-            email=getattr(user, "email", None) if user else None,
-            first_name=(user.username if user else "Customer")[:40],
-        )
-        req.status = "awaiting_payment"
-        req.admin_note = ""
+        pay_ref = f"NKR{req.id}T{int(time.time())}"[:20]
+        ok, data = initiate_clickpesa_ussd(price, pay_ref, payment_phone)
+        if ok:
+            req.status = "awaiting_payment"
+            req.admin_note = ""
+            db.session.commit()
+            try:
+                send_push_to_user(
+                    req.user_id,
+                    "Ombi la malipo limeshushwa tena",
+                    "Angalia simu, ingiza PIN. Utajulishwa baada ya uthibitisho.",
+                    url=f"/nakala/{req.id}",
+                    tag=f"nakala-repay-{req.id}",
+                )
+            except Exception:
+                pass
+            flash(
+                "Ombi la malipo limeshushwa tena! Ingiza PIN kwenye simu. "
+                "«Imelipwa» itaonekana baada ya ClickPesa kuthibitisha.",
+                "success",
+            )
+            return redirect(url_for("nakala_detail", req_id=req.id))
+        req.status = "payment_failed"
+        reason = clean_payment_error(data, "Malipo yameshindwa.")
+        req.admin_note = reason
         db.session.commit()
         flash(
-            "Unaelekezwa tena kwenye ukurasa wa malipo wa Pesapal. Maliza malipo huko.",
-            "success",
+            f"Malipo yameshindwa. Sababu: {reason} "
+            f"Jaribu tena au lipa manual: {PAYMENT_NETWORK} {PAYMENT_NUMBER}.",
+            "error",
         )
-        return redirect(data["redirect_url"])
     except Exception as e:
         req.status = "payment_failed"
         reason = clean_payment_error(str(e), "Hitilafu ya malipo.")
