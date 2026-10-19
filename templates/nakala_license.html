@@ -1,0 +1,1060 @@
+{% extends "base.html" %}
+{% block title %}Leseni ya Biashara{% endblock %}
+{% block content %}
+<style>
+    .lic-wrap { max-width: 640px; margin: 0 auto; }
+    .lic-hero {
+        background: linear-gradient(135deg, #f56b00 0%, #e85d04 50%, #dc2f02 100%);
+        border-radius: 14px;
+        padding: 14px 16px;
+        color: #fff;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 14px rgba(245, 107, 0, 0.22);
+    }
+    .lic-hero h1 {
+        font-size: 17px;
+        font-weight: 800;
+        margin: 0 0 4px;
+        letter-spacing: -0.2px;
+    }
+    .lic-hero p {
+        font-size: 12px;
+        opacity: 0.94;
+        margin: 0;
+        line-height: 1.4;
+    }
+    .step-bar {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 12px;
+    }
+    .step-pill {
+        flex: 1;
+        text-align: center;
+        padding: 7px 4px;
+        border-radius: 9px;
+        background: #f5f5f5;
+        font-size: 11px;
+        font-weight: 700;
+        color: #999;
+    }
+    .step-pill.on {
+        background: #fff3e8;
+        color: #f56b00;
+    }
+    .panel {
+        background: #fff;
+        border-radius: 14px;
+        border: 1px solid #eee;
+        padding: 14px;
+        margin-bottom: 12px;
+        box-shadow: 0 1px 6px rgba(0,0,0,0.03);
+    }
+    .panel-title {
+        font-size: 13.5px;
+        font-weight: 800;
+        color: #222;
+        margin: 0 0 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .panel-title .num {
+        width: 22px; height: 22px;
+        border-radius: 7px;
+        background: #fff3e8;
+        color: #f56b00;
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        font-weight: 800;
+        flex-shrink: 0;
+    }
+    .cat-scroll {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 2px 2px 10px;
+        margin: 0 -2px 4px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .cat-scroll::-webkit-scrollbar { display: none; }
+    .cat-chip {
+        flex-shrink: 0;
+        padding: 7px 12px;
+        border-radius: 999px;
+        border: 1.5px solid #ebebeb;
+        background: #fafafa;
+        font-size: 11.5px;
+        font-weight: 700;
+        color: #555;
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+    }
+    .cat-chip:active { transform: scale(0.96); }
+    .cat-chip.active {
+        background: linear-gradient(135deg, #f56b00, #e85d04);
+        color: #fff;
+        border-color: transparent;
+        box-shadow: 0 3px 10px rgba(245, 107, 0, 0.28);
+    }
+    .search-wrap {
+        position: relative;
+        margin-bottom: 10px;
+    }
+    .search-wrap input {
+        width: 100%;
+        padding: 11px 12px 11px 38px;
+        border: 1.5px solid #e8e8e8;
+        border-radius: 11px;
+        font-size: 13.5px;
+        background: #f9f9f9;
+        box-sizing: border-box;
+        outline: none;
+    }
+    .search-wrap input:focus {
+        border-color: #f56b00;
+        background: #fff;
+    }
+    .search-wrap .icon {
+        position: absolute;
+        left: 13px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 14px;
+        opacity: 0.5;
+        pointer-events: none;
+    }
+    .license-list {
+        max-height: 340px;
+        overflow-y: auto;
+        border-radius: 12px;
+        border: 1px solid #f0f0f0;
+        background: #fcfcfc;
+        scrollbar-width: none;
+    }
+    .license-list::-webkit-scrollbar { display: none; }
+    .license-item {
+        display: none;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px 13px;
+        border-bottom: 1px solid #f3f3f3;
+        cursor: pointer;
+        transition: background 0.12s;
+    }
+    .license-item.visible { display: flex; }
+    .license-item:last-child { border-bottom: none; }
+    .license-item:hover { background: #fff8f3; }
+    .license-item.selected {
+        background: linear-gradient(90deg, #fff3e8, #fff);
+        box-shadow: inset 3px 0 0 #f56b00;
+    }
+    .lic-radio {
+        width: 18px; height: 18px;
+        border-radius: 50%;
+        border: 2px solid #ddd;
+        flex-shrink: 0;
+        margin-top: 2px;
+        display: grid;
+        place-items: center;
+        transition: all 0.15s;
+    }
+    .license-item.selected .lic-radio {
+        border-color: #f56b00;
+        background: #f56b00;
+    }
+    .license-item.selected .lic-radio::after {
+        content: '';
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        background: #fff;
+    }
+    .lic-body { flex: 1; min-width: 0; }
+    .lic-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #222;
+        line-height: 1.35;
+    }
+    .lic-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-top: 5px;
+        align-items: center;
+    }
+    .lic-badge {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 5px;
+        background: #f0f0f0;
+        color: #666;
+    }
+    .lic-note {
+        font-size: 11px;
+        color: #888;
+        font-style: italic;
+        line-height: 1.25;
+    }
+    .lic-action {
+        font-size: 11px;
+        font-weight: 700;
+        color: #f56b00;
+        white-space: nowrap;
+        flex-shrink: 0;
+        opacity: 0.7;
+    }
+    .license-item.selected .lic-action {
+        opacity: 1;
+        color: #e65100;
+    }
+    .empty-msg {
+        padding: 24px 14px;
+        text-align: center;
+        color: #aaa;
+        font-size: 13px;
+        display: none;
+    }
+    .select-card {
+        display: none;
+        margin-top: 12px;
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid #ffe0c2;
+        background: #fff;
+        box-shadow: 0 2px 10px rgba(245, 107, 0, 0.08);
+    }
+    .select-card.show { display: block; }
+    .select-card-top {
+        background: linear-gradient(135deg, #f56b00, #e85d04);
+        color: #fff;
+        padding: 12px 14px;
+    }
+    .select-card-top .lbl {
+        font-size: 10.5px;
+        opacity: 0.9;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+    .select-card-top .name {
+        font-size: 14px;
+        font-weight: 700;
+        margin-top: 4px;
+        line-height: 1.35;
+    }
+    .select-card-body {
+        padding: 12px 14px;
+        background: #fffaf5;
+    }
+    .range-box {
+        background: #fff;
+        border-radius: 10px;
+        padding: 11px 12px;
+        border: 1px solid #ffe0c2;
+        margin-bottom: 10px;
+    }
+    .range-box .range-lbl {
+        font-size: 10.5px;
+        color: #e65100;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.2px;
+        margin-bottom: 4px;
+    }
+    .range-box .range-val {
+        font-size: 15px;
+        font-weight: 800;
+        color: #bf360c;
+        line-height: 1.3;
+    }
+    .range-box .range-hint {
+        font-size: 11px;
+        color: #888;
+        margin-top: 4px;
+        line-height: 1.35;
+    }
+    .fee-box {
+        background: #fff;
+        border-radius: 10px;
+        padding: 11px 12px;
+        border: 1px dashed #a5d6a7;
+    }
+    .fee-box .fee-lbl {
+        font-size: 10.5px;
+        color: #2e7d32;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.2px;
+    }
+    .fee-box .fee-val {
+        font-size: 17px;
+        font-weight: 800;
+        color: #1b5e20;
+        margin-top: 2px;
+    }
+    .fee-box .fee-hint {
+        font-size: 11px;
+        color: #666;
+        margin-top: 4px;
+        line-height: 1.35;
+    }
+    .field { margin-bottom: 13px; }
+    .field label {
+        display: block;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #444;
+        margin-bottom: 5px;
+    }
+    .field label .req { color: #e53935; }
+    .field .input, .field select.input {
+        width: 100%;
+        padding: 12px 13px;
+        border: 1.5px solid #e8e8e8;
+        border-radius: 11px;
+        font-size: 14.5px;
+        background: #fafafa;
+        box-sizing: border-box;
+        outline: none;
+        appearance: none;
+        -webkit-appearance: none;
+    }
+    .field .input:focus, .field select.input:focus {
+        border-color: #f56b00;
+        background: #fff;
+    }
+    .field select.input:disabled {
+        background: #f0f0f0;
+        color: #aaa;
+    }
+    .select-wrap {
+        position: relative;
+    }
+    .select-wrap::after {
+        content: "";
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid #999;
+        border-bottom: 2px solid #999;
+        transform: translateY(-60%) rotate(45deg);
+        pointer-events: none;
+    }
+    .select-wrap select.input {
+        padding-right: 36px;
+        cursor: pointer;
+    }
+    .submit-btn, .next-btn, .back-btn {
+        width: 100%;
+        padding: 14px;
+        border: none;
+        border-radius: 12px;
+        font-size: 14.5px;
+        font-weight: 800;
+        cursor: pointer;
+        margin-top: 6px;
+    }
+    .next-btn, .submit-btn {
+        background: linear-gradient(135deg, #f56b00, #e85d04);
+        color: #fff;
+        box-shadow: 0 5px 14px rgba(245, 107, 0, 0.3);
+    }
+    .next-btn:active, .submit-btn:active { transform: scale(0.98); }
+    .back-btn {
+        background: #f2f2f2;
+        color: #444;
+        margin-bottom: 8px;
+    }
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+    .selected-summary {
+        background: #fff8f0;
+        border: 1px solid #ffe0c2;
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-bottom: 14px;
+        font-size: 13px;
+        line-height: 1.45;
+    }
+    .selected-summary strong { color: #e65100; }
+    .selected-summary .sum-row {
+        margin-top: 4px;
+        color: #555;
+    }
+    .loc-note {
+        display: none;
+        font-size: 11px;
+        color: #b45309;
+        margin-top: 6px;
+        line-height: 1.35;
+    }
+    .loc-note.show { display: block; }
+    /* Location lists — same style as license list */
+    .loc-list {
+        max-height: 240px;
+        overflow-y: auto;
+        border-radius: 12px;
+        border: 1px solid #f0f0f0;
+        background: #fcfcfc;
+        margin-top: 6px;
+        scrollbar-width: none;
+    }
+    .loc-list::-webkit-scrollbar { display: none; }
+    .loc-item {
+        display: none;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 13px;
+        border-bottom: 1px solid #f3f3f3;
+        cursor: pointer;
+        transition: background 0.12s;
+    }
+    .loc-item.visible { display: flex; }
+    .loc-item:last-child { border-bottom: none; }
+    .loc-item:hover { background: #fff8f3; }
+    .loc-item.selected {
+        background: linear-gradient(90deg, #fff3e8, #fff);
+        box-shadow: inset 3px 0 0 #f56b00;
+    }
+    .loc-item .lic-radio {
+        width: 18px; height: 18px;
+        border-radius: 50%;
+        border: 2px solid #ddd;
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+    }
+    .loc-item.selected .lic-radio {
+        border-color: #f56b00;
+        background: #f56b00;
+    }
+    .loc-item.selected .lic-radio::after {
+        content: '';
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        background: #fff;
+    }
+    .loc-item .lic-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #222;
+    }
+    .loc-picked {
+        display: none;
+        margin-top: 8px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #fff8f0;
+        border: 1px solid #ffe0c2;
+        font-size: 13px;
+        font-weight: 700;
+        color: #e65100;
+    }
+    .loc-picked.show { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .loc-picked button {
+        border: none;
+        background: #fff;
+        border: 1px solid #ffcc80;
+        color: #e65100;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 5px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+    }
+    .loc-block { margin-bottom: 14px; }
+    .loc-block .search-wrap { margin-bottom: 6px; }
+    /* Hide list + search when picked (class) — also clear inline display */
+    .loc-block.done .loc-list,
+    .loc-block.done .search-wrap,
+    .loc-block.done #mtaaTextWrap { display: none !important; }
+    /* App modal (si browser alert) */
+    .app-modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        z-index: 9999;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+    .app-modal-overlay.show { display: flex; }
+    .app-modal {
+        background: #fff;
+        border-radius: 18px;
+        padding: 22px 20px 16px;
+        max-width: 340px;
+        width: 100%;
+        text-align: center;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+        animation: modalIn 0.2s ease;
+    }
+    @keyframes modalIn {
+        from { opacity: 0; transform: scale(0.92); }
+        to { opacity: 1; transform: scale(1); }
+    }
+    .app-modal .icon-circle {
+        width: 48px; height: 48px;
+        border-radius: 50%;
+        background: #fff3e8;
+        color: #f56b00;
+        display: grid;
+        place-items: center;
+        font-size: 22px;
+        font-weight: 800;
+        margin: 0 auto 12px;
+    }
+    .app-modal h3 {
+        font-size: 16px;
+        font-weight: 800;
+        margin: 0 0 8px;
+        color: #222;
+    }
+    .app-modal p {
+        font-size: 13px;
+        color: #666;
+        line-height: 1.45;
+        margin: 0 0 16px;
+    }
+    .app-modal .modal-btn {
+        width: 100%;
+        padding: 13px;
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #f56b00, #e85d04);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 800;
+        cursor: pointer;
+    }
+</style>
+<header class="topbar">
+    <div>
+        <div class="brand">Leseni ya Biashara</div>
+        <div class="muted">Nakala · Halmashauri</div>
+    </div>
+    <a href="{{ url_for('nakala') }}" class="icon-btn">←</a>
+</header>
+<div class="page lic-wrap">
+    <div class="lic-hero">
+        <h1>Ombi la Leseni</h1>
+        <p>Chagua leseni → jaza taarifa → lipa ada ya huduma. Bei ya control number inaanzia kutoka TSh 7,000 hadi TSh 200,000 (kulingana na aina ya leseni).</p>
+    </div>
+    <div class="step-bar">
+        <div class="step-pill on" id="pill1">1. Leseni</div>
+        <div class="step-pill" id="pill2">2. Taarifa</div>
+        <div class="step-pill" id="pill3">3. Malipo</div>
+    </div>
+    <form method="POST" action="{{ url_for('nakala_license') }}" id="licenseForm">
+        <input type="hidden" name="license_type" id="license_type" required>
+        <!-- ========== STEP 1: Chagua leseni ========== -->
+        <div class="step-panel active" id="step1">
+            <div class="panel">
+                <div class="panel-title"><span class="num">1</span> Chagua Leseni</div>
+                <div class="cat-scroll" id="catScroll">
+                    <div class="cat-chip active" data-cat="all" onclick="filterCat(this)">Zote</div>
+                    {% for cat in categories %}
+                    <div class="cat-chip" data-cat="{{ cat }}" onclick="filterCat(this)">{{ loop.index }}. {{ cat }}</div>
+                    {% endfor %}
+                </div>
+                <div class="search-wrap">
+                    <span class="icon">🔍</span>
+                    <input type="text" id="licenseSearch" placeholder="Tafuta... mfano: uwakala, duka, salon, garage">
+                </div>
+                <div class="license-list" id="licenseList">
+                    {% for lic in licenses %}
+                    <div
+                        class="license-item visible"
+                        data-id="{{ lic.id }}"
+                        data-name="{{ lic.name }}"
+                        data-cat="{{ lic.category }}"
+                        data-note="{{ lic.note|default('', true) }}"
+                        data-search="{{ lic.name|lower }} {{ lic.category|lower }} {{ lic.note|default('', true)|lower }}"
+                        onclick="selectLicense(this)"
+                    >
+                        <div class="lic-radio"></div>
+                        <div class="lic-body">
+                            <div class="lic-name">{{ lic.name }}</div>
+                            <div class="lic-meta">
+                                <span class="lic-badge">{{ lic.category }}</span>
+                                {% if lic.note %}<span class="lic-note">{{ lic.note }}</span>{% endif %}
+                            </div>
+                        </div>
+                        <div class="lic-action">Chagua</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="empty-msg" id="emptyMsg">Hakuna leseni inayolingana.</div>
+                <button type="button" id="changeChoice" class="back-btn" style="display:none;margin-top:6px;" onclick="showLicenseListAgain()">
+                    ← Badilisha leseni
+                </button>
+                <div class="select-card" id="priceBox">
+                    <div class="select-card-top">
+                        <div class="lbl">Leseni uliyochagua</div>
+                        <div class="name" id="selectedName"></div>
+                    </div>
+                    <div class="select-card-body">
+                        <div class="range-box">
+                            <div class="range-lbl">Bei ya Control Number</div>
+                            <div class="range-val">Inaanzia kutoka TSh 7,000 – 200,000</div>
+                            <div class="range-hint">Beihalisi inategemea aina ya leseni. Admin atakutolea control number baada ya kulipa ada ya huduma.</div>
+                        </div>
+                        <div class="fee-box">
+                            <div class="fee-lbl">Ada ya Huduma (unayo lipa sasa)</div>
+                            <div class="fee-val">TSh {{ "{:,}".format(service_fee|default(10000)) }}</div>
+                            <div class="fee-hint">Baada ya malipo, admin atakutolea control number (inaisha baada ya siku 1).</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="next-btn" id="btnNext" onclick="goStep2()">
+                Next → Jaza Taarifa
+            </button>
+        </div>
+        <!-- ========== STEP 2: Taarifa ========== -->
+        <div class="step-panel" id="step2">
+            <button type="button" class="back-btn" onclick="goStep1()">← Rudi chagua leseni</button>
+            <div class="selected-summary" id="summaryBox">
+                <strong id="sumName">—</strong>
+                <div class="sum-row">Control Number: <strong>Inaanzia TSh 7,000 – 200,000</strong></div>
+                <div class="sum-row">Ada ya huduma: <strong>TSh {{ "{:,}".format(service_fee|default(10000)) }}</strong></div>
+            </div>
+            <div class="panel">
+                <div class="panel-title"><span class="num">2</span> Taarifa Binafsi</div>
+                <div class="field">
+                    <label>Jina Kamili (Kwanza + Kati + Mwisho) <span class="req">*</span></label>
+                    <input type="text" name="full_name" class="input" placeholder="Mfano: Juma Ally Hassan" required>
+                </div>
+                <div class="field">
+                    <label>Jina Kamili la Mama <span class="req">*</span></label>
+                    <input type="text" name="mother_name" class="input" placeholder="Jina la mama" required>
+                </div>
+                <div class="field">
+                    <label>Namba ya NIDA / NIN <span class="req">*</span></label>
+                    <input type="text" name="nida_number" class="input" maxlength="20" pattern="[0-9]{1,20}"
+                           placeholder="Namba 20 za NIDA" required
+                           oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                </div>
+                <div class="field">
+                    <label>Namba ya Simu 1 <span class="req">*</span></label>
+                    <input type="tel" name="phone1" class="input" placeholder="07XXXXXXXX" required>
+                </div>
+                <div class="field">
+                    <label>Namba ya Simu 2 <span style="color:#aaa;font-weight:500">(si lazima)</span></label>
+                    <input type="tel" name="phone2" class="input" placeholder="07XXXXXXXX">
+                </div>
+            </div>
+            <div class="panel">
+                <div class="panel-title"><span class="num">3</span> Eneo la Leseni / Biashara</div>
+                <p style="font-size:12px;color:#888;margin:0 0 12px;line-height:1.4;">
+                    Chagua Mkoa → Wilaya → Kata → Mtaa (kama orodha ya leseni). Ikiwa mtaa haupo, andika mwenyewe.
+                </p>
+                <!-- MKOA -->
+                <div class="loc-block" id="blockMkoa">
+                    <label style="font-size:12.5px;font-weight:700;color:#444;">Mkoa <span class="req" style="color:#e53935;">*</span></label>
+                    <div class="search-wrap">
+                        <span class="icon">🔍</span>
+                        <input type="text" id="searchMkoa" placeholder="Tafuta mkoa...">
+                    </div>
+                    <div class="loc-list" id="listMkoa"></div>
+                    <div class="loc-picked" id="pickedMkoa"><span></span><button type="button" data-reset="mkoa">Badilisha</button></div>
+                    <input type="hidden" name="license_mkoa" id="license_mkoa" value="">
+                </div>
+                <!-- WILAYA -->
+                <div class="loc-block" id="blockWilaya" style="display:none;">
+                    <label style="font-size:12.5px;font-weight:700;color:#444;">Wilaya <span class="req" style="color:#e53935;">*</span></label>
+                    <div class="search-wrap">
+                        <span class="icon">🔍</span>
+                        <input type="text" id="searchWilaya" placeholder="Tafuta wilaya...">
+                    </div>
+                    <div class="loc-list" id="listWilaya"></div>
+                    <div class="loc-picked" id="pickedWilaya"><span></span><button type="button" data-reset="wilaya">Badilisha</button></div>
+                    <input type="hidden" name="license_wilaya" id="license_wilaya" value="">
+                </div>
+                <!-- KATA -->
+                <div class="loc-block" id="blockKata" style="display:none;">
+                    <label style="font-size:12.5px;font-weight:700;color:#444;">Kata <span class="req" style="color:#e53935;">*</span></label>
+                    <div class="search-wrap">
+                        <span class="icon">🔍</span>
+                        <input type="text" id="searchKata" placeholder="Tafuta kata...">
+                    </div>
+                    <div class="loc-list" id="listKata"></div>
+                    <div class="loc-picked" id="pickedKata"><span></span><button type="button" data-reset="kata">Badilisha</button></div>
+                    <input type="hidden" name="license_kata" id="license_kata" value="">
+                </div>
+                <!-- MTAA -->
+                <div class="loc-block" id="blockMtaa" style="display:none;">
+                    <label style="font-size:12.5px;font-weight:700;color:#444;">Mtaa <span class="req" style="color:#e53935;">*</span></label>
+                    <div class="search-wrap" id="mtaaSearchWrap">
+                        <span class="icon">🔍</span>
+                        <input type="text" id="searchMtaa" placeholder="Tafuta mtaa...">
+                    </div>
+                    <div class="loc-list" id="listMtaa"></div>
+                    <div id="mtaaTextWrap" style="display:none;margin-top:6px;">
+                        <input type="text" id="license_mtaa_text" class="input" placeholder="Andika jina la mtaa..." autocomplete="off">
+                        <p class="loc-note show">Hakuna orodha ya mitaa — andika jina la mtaa hapo juu.</p>
+                    </div>
+                    <div class="loc-picked" id="pickedMtaa"><span></span><button type="button" data-reset="mtaa">Badilisha</button></div>
+                    <input type="hidden" name="license_mtaa" id="license_mtaa" value="">
+                </div>
+                <input type="hidden" name="license_location" id="license_location" value="">
+            </div>
+            <div class="panel">
+                <div class="panel-title"><span class="num">4</span> Shule &amp; Usajili wa NIDA</div>
+                <div class="field">
+                    <label>Jina la Shule ya Msingi <span class="req">*</span></label>
+                    <input type="text" name="primary_school" class="input" required>
+                </div>
+                <div class="field">
+                    <label>Mwaka wa Kuhitimu Darasa la Saba <span class="req">*</span></label>
+                    <input type="text" name="year_completed" class="input" placeholder="Mfano: 2010" required>
+                </div>
+                <div class="field">
+                    <label>Wilaya uliyosomea Shule ya Msingi <span class="req">*</span></label>
+                    <input type="text" name="school_district" class="input" required>
+                </div>
+                <div class="field">
+                    <label>Mkoa uliyosomea Shule ya Msingi <span class="req">*</span></label>
+                    <input type="text" name="school_region" class="input" required>
+                </div>
+                <div class="field">
+                    <label>Wilaya uliyojiandikishia NIDA <span class="req">*</span></label>
+                    <input type="text" name="nida_reg_district" class="input" required>
+                </div>
+                <div class="field">
+                    <label>Mkoa uliyojiandikishia NIDA <span class="req">*</span></label>
+                    <input type="text" name="nida_reg_region" class="input" required>
+                </div>
+                <div class="field">
+                    <label>Mtaa / Kijiji ulipojiandikishia NIDA <span class="req">*</span></label>
+                    <input type="text" name="nida_reg_street" class="input" required>
+                </div>
+            </div>
+            <button type="submit" class="submit-btn" onclick="return validateLicense()">
+                Endelea → Hakiki &amp; Lipa Ada TSh {{ "{:,}".format(service_fee|default(10000)) }}
+            </button>
+        </div>
+    </form>
+<!-- App modal -->
+<div class="app-modal-overlay" id="appModal">
+    <div class="app-modal">
+        <div class="icon-circle">!</div>
+        <h3 id="appModalTitle">Taarifa</h3>
+        <p id="appModalMsg"></p>
+        <button type="button" class="modal-btn" id="appModalOk">Sawa</button>
+    </div>
+</div>
+</div>
+<script src="{{ url_for('static', filename='tz_locations.js') }}"></script>
+<script>
+let currentCat = 'all';
+let selectedName = '';
+function filterCat(el) {
+    document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    currentCat = el.dataset.cat;
+    applyFilters();
+}
+function applyFilters() {
+    const q = document.getElementById('licenseSearch').value.toLowerCase().trim();
+    let shown = 0;
+    document.querySelectorAll('.license-item').forEach(item => {
+        const catOk = currentCat === 'all' || item.dataset.cat === currentCat;
+        const searchOk = !q || item.dataset.search.includes(q);
+        const show = catOk && searchOk;
+        item.classList.toggle('visible', show);
+        if (show) shown++;
+    });
+    document.getElementById('emptyMsg').style.display = shown ? 'none' : 'block';
+}
+document.getElementById('licenseSearch').addEventListener('input', applyFilters);
+function selectLicense(el) {
+    document.querySelectorAll('.license-item').forEach(i => i.classList.remove('selected'));
+    el.classList.add('selected');
+    document.getElementById('license_type').value = el.dataset.id;
+    selectedName = el.dataset.name;
+    document.getElementById('selectedName').textContent = selectedName;
+    document.getElementById('priceBox').classList.add('show');
+    ['catScroll', 'licenseList', 'emptyMsg'].forEach(function(id) {
+        var n = document.getElementById(id);
+        if (n) n.style.display = 'none';
+    });
+    var sw = document.querySelector('#step1 .search-wrap');
+    if (sw) sw.style.display = 'none';
+    var ch = document.getElementById('changeChoice');
+    if (ch) ch.style.display = 'block';
+    document.getElementById('priceBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function showLicenseListAgain() {
+    document.getElementById('license_type').value = '';
+    selectedName = '';
+    document.querySelectorAll('.license-item').forEach(i => i.classList.remove('selected'));
+    document.getElementById('priceBox').classList.remove('show');
+    var cat = document.getElementById('catScroll');
+    if (cat) cat.style.display = 'flex';
+    var sw = document.querySelector('#step1 .search-wrap');
+    if (sw) sw.style.display = 'block';
+    var list = document.getElementById('licenseList');
+    if (list) list.style.display = 'block';
+    var ch = document.getElementById('changeChoice');
+    if (ch) ch.style.display = 'none';
+    applyFilters();
+}
+function goStep2() {
+    if (!document.getElementById('license_type').value) {
+        showAppModal('Chagua Leseni', 'Tafadhali chagua aina ya leseni kwenye orodha kwanza.');
+        document.getElementById('licenseList').scrollIntoView({ behavior: 'smooth' });
+        return;
+    }
+    document.getElementById('sumName').textContent = selectedName;
+    document.getElementById('step1').classList.remove('active');
+    document.getElementById('step2').classList.add('active');
+    document.getElementById('pill1').classList.remove('on');
+    document.getElementById('pill2').classList.add('on');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function goStep1() {
+    document.getElementById('step2').classList.remove('active');
+    document.getElementById('step1').classList.add('active');
+    document.getElementById('pill2').classList.remove('on');
+    document.getElementById('pill1').classList.add('on');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function validateLicense() {
+    if (!document.getElementById('license_type').value) {
+        showAppModal('Chagua Leseni', 'Tafadhali chagua aina ya leseni.');
+        goStep1();
+        return false;
+    }
+    if (window.syncLoc) window.syncLoc();
+    if (!document.getElementById('license_mtaa').value) {
+        showAppModal('Eneo la Leseni', 'Chagua au andika mtaa wa eneo la leseni.');
+        return false;
+    }
+    return true;
+}
+/* ---- App modal ---- */
+function showAppModal(title, msg) {
+    document.getElementById('appModalTitle').textContent = title || 'Taarifa';
+    document.getElementById('appModalMsg').textContent = msg || '';
+    document.getElementById('appModal').classList.add('show');
+}
+document.getElementById('appModalOk').addEventListener('click', function () {
+    document.getElementById('appModal').classList.remove('show');
+});
+document.getElementById('appModal').addEventListener('click', function (e) {
+    if (e.target === this) this.classList.remove('show');
+});
+/* ---- Location lists: Mkoa → Wilaya → Kata → Mtaa ---- */
+(function () {
+    var root = (window.TZ_LOCATIONS && window.TZ_LOCATIONS.regions) || window.TZ_LOCATIONS || {};
+    var state = { mkoa: '', wilaya: '', kata: '', mtaa: '' };
+    var listMkoa = document.getElementById('listMkoa');
+    var listWilaya = document.getElementById('listWilaya');
+    var listKata = document.getElementById('listKata');
+    var listMtaa = document.getElementById('listMtaa');
+
+    function fillList(container, items, onPick) {
+        container.innerHTML = '';
+        (items || []).forEach(function (name) {
+            var div = document.createElement('div');
+            div.className = 'loc-item visible';
+            div.dataset.name = name;
+            div.dataset.search = name.toLowerCase();
+            div.innerHTML = '<div class="lic-radio"></div><div class="lic-name"></div>';
+            div.querySelector('.lic-name').textContent = name;
+            div.addEventListener('click', function () {
+                container.querySelectorAll('.loc-item').forEach(function (i) { i.classList.remove('selected'); });
+                div.classList.add('selected');
+                onPick(name);
+            });
+            container.appendChild(div);
+        });
+    }
+    function filterList(container, q) {
+        q = (q || '').toLowerCase().trim();
+        container.querySelectorAll('.loc-item').forEach(function (item) {
+            var ok = !q || (item.dataset.search || '').indexOf(q) !== -1;
+            item.classList.toggle('visible', ok);
+        });
+    }
+    function syncLoc() {
+        document.getElementById('license_mkoa').value = state.mkoa;
+        document.getElementById('license_wilaya').value = state.wilaya;
+        document.getElementById('license_kata').value = state.kata;
+        document.getElementById('license_mtaa').value = state.mtaa;
+        document.getElementById('license_location').value =
+            [state.mtaa, state.kata, state.wilaya, state.mkoa].filter(Boolean).join(', ');
+    }
+    /** Funga orodha, onyesha picked — sawa kwa mkoa/wilaya/kata/mtaa */
+    function markPicked(blockId, pickedId, name) {
+        var block = document.getElementById(blockId);
+        var picked = document.getElementById(pickedId);
+        block.classList.add('done');
+        picked.classList.add('show');
+        picked.querySelector('span').textContent = name;
+        // Ondoa inline display ili CSS .done ifanye kazi
+        var list = block.querySelector('.loc-list');
+        var search = block.querySelector('.search-wrap');
+        if (list) list.style.display = 'none';
+        if (search) search.style.display = 'none';
+        var textWrap = block.querySelector('#mtaaTextWrap');
+        if (textWrap) textWrap.style.display = 'none';
+    }
+    function clearFrom(level) {
+        if (level === 'mkoa') {
+            state.mkoa = state.wilaya = state.kata = state.mtaa = '';
+            ['blockWilaya','blockKata','blockMtaa'].forEach(function (id) {
+                document.getElementById(id).style.display = 'none';
+                document.getElementById(id).classList.remove('done');
+            });
+            document.getElementById('blockMkoa').classList.remove('done');
+            document.getElementById('pickedMkoa').classList.remove('show');
+            document.getElementById('pickedWilaya').classList.remove('show');
+            document.getElementById('pickedKata').classList.remove('show');
+            document.getElementById('pickedMtaa').classList.remove('show');
+            // Rudisha orodha ya mkoa
+            var lm = document.getElementById('listMkoa');
+            var sm = document.getElementById('blockMkoa').querySelector('.search-wrap');
+            if (lm) lm.style.display = '';
+            if (sm) sm.style.display = '';
+        } else if (level === 'wilaya') {
+            state.wilaya = state.kata = state.mtaa = '';
+            document.getElementById('blockWilaya').classList.remove('done');
+            document.getElementById('pickedWilaya').classList.remove('show');
+            document.getElementById('blockKata').style.display = 'none';
+            document.getElementById('blockKata').classList.remove('done');
+            document.getElementById('pickedKata').classList.remove('show');
+            document.getElementById('blockMtaa').style.display = 'none';
+            document.getElementById('blockMtaa').classList.remove('done');
+            document.getElementById('pickedMtaa').classList.remove('show');
+            var lw = document.getElementById('listWilaya');
+            var sw = document.getElementById('blockWilaya').querySelector('.search-wrap');
+            if (lw) lw.style.display = '';
+            if (sw) sw.style.display = '';
+        } else if (level === 'kata') {
+            state.kata = state.mtaa = '';
+            document.getElementById('blockKata').classList.remove('done');
+            document.getElementById('pickedKata').classList.remove('show');
+            document.getElementById('blockMtaa').style.display = 'none';
+            document.getElementById('blockMtaa').classList.remove('done');
+            document.getElementById('pickedMtaa').classList.remove('show');
+            var lk = document.getElementById('listKata');
+            var sk = document.getElementById('blockKata').querySelector('.search-wrap');
+            if (lk) lk.style.display = '';
+            if (sk) sk.style.display = '';
+        } else if (level === 'mtaa') {
+            state.mtaa = '';
+            document.getElementById('blockMtaa').classList.remove('done');
+            document.getElementById('pickedMtaa').classList.remove('show');
+            // Rudisha search + list au text
+            var streets = ((root[state.mkoa] || {})[state.wilaya] || {})[state.kata] || [];
+            streets = streets.filter(function (s) { return s && String(s).trim(); });
+            if (streets.length) {
+                document.getElementById('mtaaTextWrap').style.display = 'none';
+                document.getElementById('listMtaa').style.display = '';
+                document.getElementById('mtaaSearchWrap').style.display = '';
+            } else {
+                document.getElementById('listMtaa').style.display = 'none';
+                document.getElementById('mtaaSearchWrap').style.display = 'none';
+                document.getElementById('mtaaTextWrap').style.display = 'block';
+                document.getElementById('license_mtaa_text').value = '';
+            }
+        }
+        syncLoc();
+    }
+    // Reset buttons
+    document.querySelectorAll('[data-reset]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            clearFrom(btn.getAttribute('data-reset'));
+        });
+    });
+    // Load regions
+    fillList(listMkoa, Object.keys(root).sort(), function (name) {
+        state.mkoa = name;
+        state.wilaya = state.kata = state.mtaa = '';
+        markPicked('blockMkoa', 'pickedMkoa', name);
+        var dists = Object.keys(root[name] || {}).sort();
+        fillList(listWilaya, dists, function (wname) {
+            state.wilaya = wname;
+            state.kata = state.mtaa = '';
+            markPicked('blockWilaya', 'pickedWilaya', wname);
+            var wards = Object.keys((root[state.mkoa] || {})[wname] || {}).sort();
+            fillList(listKata, wards, function (kname) {
+                state.kata = kname;
+                state.mtaa = '';
+                markPicked('blockKata', 'pickedKata', kname);
+                var streets = ((root[state.mkoa] || {})[state.wilaya] || {})[kname] || [];
+                streets = streets.filter(function (s) { return s && String(s).trim(); });
+                document.getElementById('blockMtaa').style.display = 'block';
+                document.getElementById('blockMtaa').classList.remove('done');
+                document.getElementById('pickedMtaa').classList.remove('show');
+                if (streets.length) {
+                    document.getElementById('mtaaTextWrap').style.display = 'none';
+                    document.getElementById('listMtaa').style.display = '';
+                    document.getElementById('mtaaSearchWrap').style.display = '';
+                    fillList(listMtaa, streets, function (mname) {
+                        state.mtaa = mname;
+                        markPicked('blockMtaa', 'pickedMtaa', mname);
+                        syncLoc();
+                    });
+                } else {
+                    document.getElementById('listMtaa').style.display = 'none';
+                    document.getElementById('mtaaSearchWrap').style.display = 'none';
+                    document.getElementById('mtaaTextWrap').style.display = 'block';
+                    document.getElementById('license_mtaa_text').value = '';
+                    document.getElementById('license_mtaa_text').oninput = function () {
+                        state.mtaa = (this.value || '').trim();
+                        if (state.mtaa) {
+                            markPicked('blockMtaa', 'pickedMtaa', state.mtaa);
+                        }
+                        syncLoc();
+                    };
+                }
+                syncLoc();
+            });
+            document.getElementById('blockKata').style.display = 'block';
+            document.getElementById('blockKata').classList.remove('done');
+            document.getElementById('pickedKata').classList.remove('show');
+            var lk = document.getElementById('listKata');
+            var sk = document.getElementById('blockKata').querySelector('.search-wrap');
+            if (lk) lk.style.display = '';
+            if (sk) sk.style.display = '';
+            document.getElementById('blockMtaa').style.display = 'none';
+            syncLoc();
+        });
+        document.getElementById('blockWilaya').style.display = 'block';
+        document.getElementById('blockWilaya').classList.remove('done');
+        document.getElementById('pickedWilaya').classList.remove('show');
+        var lw = document.getElementById('listWilaya');
+        var sw = document.getElementById('blockWilaya').querySelector('.search-wrap');
+        if (lw) lw.style.display = '';
+        if (sw) sw.style.display = '';
+        document.getElementById('blockKata').style.display = 'none';
+        document.getElementById('blockMtaa').style.display = 'none';
+        syncLoc();
+    });
+    document.getElementById('searchMkoa').addEventListener('input', function () {
+        filterList(listMkoa, this.value);
+    });
+    document.getElementById('searchWilaya').addEventListener('input', function () {
+        filterList(listWilaya, this.value);
+    });
+    document.getElementById('searchKata').addEventListener('input', function () {
+        filterList(listKata, this.value);
+    });
+    document.getElementById('searchMtaa').addEventListener('input', function () {
+        filterList(listMtaa, this.value);
+    });
+    window.syncLoc = syncLoc;
+})();
+</script>
+{% endblock %}

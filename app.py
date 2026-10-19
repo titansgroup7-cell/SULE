@@ -1,0 +1,4234 @@
+import os
+import csv
+import io
+import json
+import secrets
+import time
+import requests
+from datetime import datetime, timedelta, timezone
+from functools import wraps
+from flask import (
+    Flask, render_template, request, redirect, url_for,
+    flash, session, jsonify, send_from_directory, Response
+)
+from werkzeug.exceptions import RequestEntityTooLarge
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
+
+# ---------------------------------------------------------------------------
+# App setup
+# ---------------------------------------------------------------------------
+app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "kijiji-tanzania-secret-key-change-me")
+
+# Session inabaki muda mrefu (mwaka 1) mpaka user atoke mwenyewe
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=365)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+# Railway hutumia HTTPS — cookie salama
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") != "development"
+# Refresh cookie kila request ili isimalize
+app.config["SESSION_REFRESH_EACH_REQUEST"] = True
+
+basedir = os.path.abspath(os.path.dirname(__file__))
+
+# Database — Supabase / Railway / any PostgreSQL
+# Supabase: tumia Transaction pooler (port 6543) kwenye Vercel/serverless
+database_url = os.environ.get("DATABASE_URL")
+if database_url:
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    # SSL + pool — muhimu kwa Supabase (hasa serverless)
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+        "pool_size": 5,
+        "max_overflow": 10,
+        "connect_args": {
+            "sslmode": os.environ.get("DB_SSLMODE", "require"),
+            "connect_timeout": 15,
+        },
+    }
+else:
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(basedir, "instance", "kijiji.db")
+
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+_upload_root = os.environ.get("UPLOAD_ROOT") or os.path.join(basedir, "static", "uploads")
+app.config["UPLOAD_FOLDER"] = _upload_root
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB — picha/PDF kubwa
+
+# Local folders (fallback). Supabase Storage inatumika kama SUPABASE_URL imewekwa.
+for _p in (
+    app.config["UPLOAD_FOLDER"],
+    os.path.join(app.config["UPLOAD_FOLDER"], "slide"),
+    os.path.join(app.config["UPLOAD_FOLDER"], "nakala"),
+    os.path.join(app.config["UPLOAD_FOLDER"], "agency"),
+    os.path.join(basedir, "instance"),
+    os.path.join(basedir, "static", "uploads"),
+    os.path.join(basedir, "static", "uploads", "slide"),
+):
+    try:
+        os.makedirs(_p, exist_ok=True)
+    except OSError:
+        pass
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_file_too_large(e):
+    # Usifute session — user abaki logged in; rudisha tu ujumbe
+    flash("Faili ni kubwa mno. Tumia picha/PDF chini ya 50 MB au compress kidogo, kisha jaribu tena.", "error")
+    ref = request.referrer
+    if ref and ref.startswith(request.host_url):
+        return redirect(ref)
+    return redirect(url_for("home"))
+
+db = SQLAlchemy(app)
+
+# Manual payment (fallback)
+PAYMENT_NUMBER = os.environ.get("PAYMENT_NUMBER", "37912416")
+PAYMENT_NAME = os.environ.get("PAYMENT_NAME", "Matondo Maduhu")
+PAYMENT_NETWORK = os.environ.get("PAYMENT_NETWORK", "Vodacom")
+
+# Pesapal API 3.0 (badala ya ClickPesa)
+# Jisajili: https://developer.pesapal.com  → Consumer Key + Consumer Secret
+PESAPAL_CONSUMER_KEY = os.environ.get("PESAPAL_CONSUMER_KEY", "")
+PESAPAL_CONSUMER_SECRET = os.environ.get("PESAPAL_CONSUMER_SECRET", "")
+PESAPAL_IPN_ID = os.environ.get("PESAPAL_IPN_ID", "")  # notification_id baada ya kusajili IPN
+# live = production | sandbox = demo
+PESAPAL_ENV = (os.environ.get("PESAPAL_ENV") or "live").strip().lower()
+if PESAPAL_ENV in ("sandbox", "demo", "test"):
+    PESAPAL_BASE = "https://cybqa.pesapal.com/pesapalv3/api"
+else:
+    PESAPAL_BASE = "https://pay.pesapal.com/v3/api"
+
+# Supabase Storage (faili zote: picha, PDF, slides)
+# Project Settings → API → Project URL + service_role key (secret)
+SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "") or os.environ.get("SUPABASE_KEY", "")
+SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "uploads")
+
+# SMS OTP (Beem Africa - SMS ya kawaida, si bulk marketing)
+# Jisajili: https://beem.africa  → API key + Secret
+SMS_API_KEY = os.environ.get("SMS_API_KEY", "")
+SMS_API_SECRET = os.environ.get("SMS_API_SECRET", "")
+SMS_SENDER_ID = os.environ.get("SMS_SENDER_ID", "INFO")  # jina au namba; max 11. Si lazima Sender Name maalum
+
+# Web Push (VAPID) — env ina priority; defaults zinafanya kazi kama env hazipo
+VAPID_PRIVATE_KEY = os.environ.get(
+    "VAPID_PRIVATE_KEY",
+    "HWkzToktm9g98f8srg5Lo6MPDggTrxwGFfwzLnq7XYQ",
+)
+VAPID_PUBLIC_KEY = os.environ.get(
+    "VAPID_PUBLIC_KEY",
+    "BDLkkmrKM007eSEby3amhKG3or37FOULg6bpmgnKL_M2HsNLxZXhIVA9fmqva0YPYVd3wo3U4omh_CwZUMqHZAo",
+)
+VAPID_CLAIMS = {"sub": os.environ.get("VAPID_CONTACT", "mailto:keyaramadhan0@gmail.com")}
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    phone = db.Column(db.String(20), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=True)
+    password_hash = db.Column(db.String(256), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
+    is_blocked = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reset_otp = db.Column(db.String(10), default="")
+    reset_otp_expires = db.Column(db.DateTime, nullable=True)
+    orders = db.relationship("Order", backref="user", lazy=True)
+    messages = db.relationship("Message", backref="user", lazy=True, foreign_keys="Message.user_id")
+    applications = db.relationship("Application", backref="user", lazy=True)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+
+class Bundle(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    amount = db.Column(db.String(50), nullable=False)
+    price = db.Column(db.Integer, nullable=False)
+    validity = db.Column(db.String(50), default="30 siku")
+    is_active = db.Column(db.Boolean, default=True)
+
+
+class Offer(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(100), nullable=False)
+    amount = db.Column(db.String(50), nullable=False)
+    price = db.Column(db.Integer, nullable=False)
+    description = db.Column(db.String(255), default="")
+    is_active = db.Column(db.Boolean, default=True)
+
+
+class Order(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    phone = db.Column(db.String(20), nullable=False)
+    amount = db.Column(db.String(80), nullable=False)
+    price = db.Column(db.Integer, default=0)
+    note = db.Column(db.Text, default="")
+    status = db.Column(db.String(30), default="awaiting_payment")  # awaiting_payment | pending | completed | rejected | failed
+    order_reference = db.Column(db.String(30), unique=True, nullable=True)
+    fail_reason = db.Column(db.String(255), default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Message(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    sender = db.Column(db.String(20), nullable=False)
+    message = db.Column(db.Text, default="")
+    image = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_delivered = db.Column(db.Boolean, default=False)
+    is_read = db.Column(db.Boolean, default=False)
+
+
+class Network(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    network = db.Column(db.String(50), unique=True, nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    services = db.relationship("AgencyService", backref="network_obj", lazy=True)
+
+
+class AgencyService(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    network_id = db.Column(db.Integer, db.ForeignKey("network.id"), nullable=False)
+    network = db.Column(db.String(50), nullable=False)
+    title = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.String(255), default="")
+    icon = db.Column(db.String(10), default="📱")
+    is_active = db.Column(db.Boolean, default=True)
+
+
+class Application(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    application_code = db.Column(db.String(30), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    service_id = db.Column(db.Integer, db.ForeignKey("agency_service.id"), nullable=True)
+    network = db.Column(db.String(50), nullable=False)
+    service_type = db.Column(db.String(120), nullable=False)
+    full_name = db.Column(db.String(120), nullable=False)
+    phone = db.Column(db.String(20), nullable=False)
+    id_type = db.Column(db.String(50), default="")
+    id_number = db.Column(db.String(80), default="")
+    line_type = db.Column(db.String(50), default="")
+    region = db.Column(db.String(80), default="")
+    district = db.Column(db.String(80), default="")
+    ward = db.Column(db.String(80), default="")
+    description = db.Column(db.Text, default="")
+    status = db.Column(db.String(30), default="pending")
+    admin_note = db.Column(db.Text, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    messages = db.relationship("AgencyMessage", backref="application", lazy=True, cascade="all, delete-orphan")
+    # Agency Lipa / Uwakala extra fields
+    tin_number = db.Column(db.String(50), default="")
+    target_phone = db.Column(db.String(20), default="")
+    contact_phone = db.Column(db.String(20), default="")
+    tin_cert = db.Column(db.String(255), default="")
+    id_doc = db.Column(db.String(255), default="")
+    shop_photo = db.Column(db.String(255), default="")
+    extra_data = db.Column(db.Text, default="")
+
+
+class AgencyMessage(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    application_id = db.Column(db.Integer, db.ForeignKey("application.id"), nullable=False)
+    sender = db.Column(db.String(20), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Slide(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    image = db.Column(db.String(255), nullable=False)
+    link = db.Column(db.String(500), default="")
+    title = db.Column(db.String(120), default="")
+    sort_order = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class NakalaRequest(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    request_code = db.Column(db.String(30), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    # tin | license | birth_cert | death_cert | cert_verify | business_name  (nida service removed)
+    service_type = db.Column(db.String(50), nullable=False)
+    full_name = db.Column(db.String(150), nullable=False)
+    mother_name = db.Column(db.String(150), default="")
+    nida_number = db.Column(db.String(20), default="")
+    phone1 = db.Column(db.String(20), nullable=False)
+    phone2 = db.Column(db.String(20), default="")
+    primary_school = db.Column(db.String(150), default="")
+    year_completed = db.Column(db.String(10), default="")
+    school_district = db.Column(db.String(80), default="")
+    school_region = db.Column(db.String(80), default="")
+    nida_reg_district = db.Column(db.String(80), default="")
+    nida_reg_region = db.Column(db.String(80), default="")
+    nida_reg_street = db.Column(db.String(120), default="")
+    nida_reg_phone = db.Column(db.String(20), default="")
+    had_tin_before = db.Column(db.String(10), default="")
+    license_type = db.Column(db.String(200), default="")
+    license_location = db.Column(db.String(200), default="")  # eneo la biashara / leseni
+    control_number = db.Column(db.String(80), default="")
+    control_number_fee = db.Column(db.Integer, default=0)  # bei rasmi ya control number
+    control_expires_at = db.Column(db.DateTime, nullable=True)
+    service_fee = db.Column(db.Integer, default=0)  # ada ya mtoa huduma (leseni = 10000)
+    price = db.Column(db.Integer, default=0)  # kiasi kinacholipwa kwenye app (service fee)
+    status = db.Column(db.String(30), default="pending")
+    # license flow: pending → waiting_control_number → control_issued → completed | rejected
+    admin_note = db.Column(db.Text, default="")
+    result_message = db.Column(db.Text, default="")
+    result_file = db.Column(db.String(255), default="")
+    # JSON: form fields + uploaded file paths (cheti / business name)
+    extra_data = db.Column(db.Text, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user = db.relationship("User", backref="nakala_requests")
+
+
+
+class PushSubscription(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    endpoint = db.Column(db.Text, unique=True, nullable=False)
+    p256dh = db.Column(db.String(255), nullable=False)
+    auth = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user = db.relationship("User", backref=db.backref("push_subscriptions", lazy=True, cascade="all, delete-orphan"))
+
+
+class ChatPresence(db.Model):
+    """Mtu yupo kwenye chat page sasa hivi (kwa kuzuia notification zisizohitajika)."""
+    id = db.Column(db.Integer, primary_key=True)
+    conversation_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    viewer_role = db.Column(db.String(20), nullable=False)  # customer | admin
+    last_seen = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def get_current_user():
+    uid = session.get("user_id")
+    if not uid:
+        return None
+    return User.query.get(uid)
+
+
+def keep_session_alive():
+    """Hakikisha session haipotei baada ya POST/upload (cookie isibadilike)."""
+    session.permanent = True
+    session.modified = True
+
+
+# Dar es Salaam = Africa/Dar_es_Salaam (EAT, UTC+3)
+DAR_TZ = timezone(timedelta(hours=3))
+
+
+def to_dar_es_salaam(dt):
+    """Convert UTC datetime to Dar es Salaam local time string."""
+    if not dt:
+        return "—"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    local = dt.astimezone(DAR_TZ)
+    return local.strftime("%d/%m/%Y %H:%M")
+
+
+@app.template_filter("from_json")
+def from_json_filter(value):
+    """Parse JSON string for templates (Nakala extra_data)."""
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    try:
+        return json.loads(value)
+    except Exception:
+        return {}
+
+
+
+
+def touch_chat_presence(conversation_user_id, viewer_role):
+    """Sasisha kuwa viewer yupo kwenye chat ya conversation hii."""
+    try:
+        row = ChatPresence.query.filter_by(
+            conversation_user_id=conversation_user_id,
+            viewer_role=viewer_role,
+        ).first()
+        now = datetime.utcnow()
+        if row:
+            row.last_seen = now
+        else:
+            db.session.add(ChatPresence(
+                conversation_user_id=conversation_user_id,
+                viewer_role=viewer_role,
+                last_seen=now,
+            ))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"presence touch: {e}")
+
+
+def is_viewing_chat(conversation_user_id, viewer_role, within_sec=25):
+    """True ikiwa viewer amekuwa kwenye chat page ndani ya sekunde chache."""
+    try:
+        row = ChatPresence.query.filter_by(
+            conversation_user_id=conversation_user_id,
+            viewer_role=viewer_role,
+        ).first()
+        if not row or not row.last_seen:
+            return False
+        delta = datetime.utcnow() - row.last_seen
+        return delta.total_seconds() <= within_sec
+    except Exception:
+        return False
+
+
+def message_to_dict(msg):
+    """JSON-safe message for live chat polling."""
+    img_url = ""
+    if msg.image:
+        img_url = "/media/" + msg.image
+    return {
+        "id": msg.id,
+        "sender": msg.sender,
+        "message": msg.message or "",
+        "image": msg.image or "",
+        "image_url": img_url,
+        "created_at": to_dar_es_salaam(msg.created_at),
+        "is_delivered": bool(getattr(msg, "is_delivered", False)),
+        "is_read": bool(getattr(msg, "is_read", False)),
+    }
+
+
+def status_label_sw(status):
+    """Jina la status kwa Kiswahili (Pesapal + workflow)."""
+    if not status:
+        return "—"
+    mapping = {
+        "awaiting_payment": "Inasubiri Malipo",
+        "payment_failed": "Malipo Yameshindwa",
+        "failed": "Malipo Yameshindwa",
+        "pending": "Inasubiri",
+        "paid": "Imelipwa",
+        "processing": "Inachakatwa",
+        "waiting_control_number": "Inasubiri Control Number",
+        "control_issued": "Control Number Imetolewa",
+        "completed": "Imekamilika",
+        "rejected": "Imekataliwa",
+    }
+    return mapping.get(str(status).strip(), str(status))
+
+
+@app.context_processor
+def inject_globals():
+    return {
+        "current_user": get_current_user(),
+        "PAYMENT_NUMBER": PAYMENT_NUMBER,
+        "PAYMENT_NAME": PAYMENT_NAME,
+        "PAYMENT_NETWORK": PAYMENT_NETWORK,
+        "to_dar_es_salaam": to_dar_es_salaam,
+        "status_label_sw": status_label_sw,
+        "clean_payment_error": clean_payment_error,
+    }
+
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            flash("Tafadhali ingia kwanza ili upate huduma.", "error")
+            # Kumbuka ukurasa aliotaka aende baada ya login
+            session["next_url"] = request.path
+            return redirect(url_for("login"))
+        if getattr(user, "is_blocked", False):
+            session.clear()
+            flash("Akaunti yako imefungwa. Wasiliana na admin.", "error")
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        user = get_current_user()
+        if not user or not user.is_admin:
+            flash("Huna ruhusa ya kufikia ukurasa huu.", "error")
+            return redirect(url_for("home"))
+        if getattr(user, "is_blocked", False):
+            session.clear()
+            flash("Akaunti yako imefungwa. Wasiliana na admin.", "error")
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def generate_application_code():
+    return "APP-" + secrets.token_hex(4).upper()
+
+
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+ALLOWED_SLIDE_EXTENSIONS = {
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico",
+    "tiff", "tif", "heic", "heif", "avif"
+}
+
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def allowed_slide_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_SLIDE_EXTENSIONS
+
+
+ALLOWED_AGENCY_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp", "pdf", "bmp"}
+
+
+def allowed_agency_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_AGENCY_EXTENSIONS
+
+
+def supabase_storage_enabled():
+    return bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
+
+
+def _guess_content_type(filename):
+    ext = (filename.rsplit(".", 1)[-1] if "." in filename else "").lower()
+    return {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "gif": "image/gif",
+        "webp": "image/webp",
+        "bmp": "image/bmp",
+        "pdf": "application/pdf",
+        "heic": "image/heic",
+        "heif": "image/heif",
+        "avif": "image/avif",
+        "tiff": "image/tiff",
+        "tif": "image/tiff",
+    }.get(ext, "application/octet-stream")
+
+
+def storage_public_url(relative_path):
+    """URL ya umma ya faili kwenye Supabase Storage (bucket public)."""
+    if not relative_path:
+        return ""
+    path = relative_path.lstrip("/")
+    if supabase_storage_enabled():
+        return f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/{path}"
+    return ""
+
+
+def storage_upload(file_storage, relative_path):
+    """
+    Pakia faili kwenye Supabase Storage au disk ya local.
+    relative_path mf: agency/doc_abc.pdf | nakala/x.jpg | slide/y.png | chat_1.png
+    Inarudisha relative_path kama imefanikiwa, au "" kama imeshindwa.
+    """
+    if not file_storage or not getattr(file_storage, "filename", None):
+        return ""
+    path = relative_path.lstrip("/")
+    # soma bytes
+    try:
+        file_storage.stream.seek(0)
+    except Exception:
+        pass
+    data = file_storage.read()
+    if not data:
+        return ""
+    content_type = _guess_content_type(path)
+
+    if supabase_storage_enabled():
+        url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{path}"
+        headers = {
+            "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+            "apikey": SUPABASE_SERVICE_KEY,
+            "Content-Type": content_type,
+            "x-upsert": "true",
+        }
+        try:
+            resp = requests.post(url, data=data, headers=headers, timeout=60)
+            # 200 create, 400 sometimes if exists — try put
+            if resp.status_code in (200, 201):
+                return path
+            # retry upsert via PUT
+            resp2 = requests.put(url, data=data, headers=headers, timeout=60)
+            if resp2.status_code in (200, 201):
+                return path
+            print(f"supabase upload fail {resp.status_code}: {resp.text[:200]}")
+            return ""
+        except Exception as e:
+            print(f"supabase upload error: {e}")
+            return ""
+
+    # Local fallback
+    full = os.path.join(app.config["UPLOAD_FOLDER"], path)
+    os.makedirs(os.path.dirname(full) or app.config["UPLOAD_FOLDER"], exist_ok=True)
+    with open(full, "wb") as f:
+        f.write(data)
+    return path
+
+
+def storage_delete(relative_path):
+    if not relative_path:
+        return False
+    path = relative_path.lstrip("/")
+    if supabase_storage_enabled():
+        url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{path}"
+        headers = {
+            "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+            "apikey": SUPABASE_SERVICE_KEY,
+        }
+        try:
+            requests.delete(url, headers=headers, timeout=20)
+            return True
+        except Exception as e:
+            print(f"supabase delete error: {e}")
+            return False
+    full = os.path.join(app.config["UPLOAD_FOLDER"], path)
+    if os.path.isfile(full):
+        try:
+            os.remove(full)
+            return True
+        except Exception:
+            return False
+    return False
+
+
+def save_agency_file(file_storage, prefix="doc"):
+    """Save under agency/ — Supabase Storage au local. Return relative path."""
+    if not file_storage or not file_storage.filename:
+        return ""
+    if not allowed_agency_file(file_storage.filename):
+        return ""
+    ext = file_storage.filename.rsplit(".", 1)[1].lower()
+    filename = secure_filename(f"{prefix}_{secrets.token_hex(6)}.{ext}")
+    return storage_upload(file_storage, f"agency/{filename}")
+
+
+def pesapal_enabled():
+    return bool(PESAPAL_CONSUMER_KEY and PESAPAL_CONSUMER_SECRET)
+
+
+def get_pesapal_token():
+    """OAuth token ya Pesapal (inaisha baada ya ~5 dakika)."""
+    url = f"{PESAPAL_BASE}/Auth/RequestToken"
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    payload = {
+        "consumer_key": PESAPAL_CONSUMER_KEY,
+        "consumer_secret": PESAPAL_CONSUMER_SECRET,
+    }
+    response = requests.post(url, json=payload, headers=headers, timeout=20)
+    data = response.json() if response.content else {}
+    token = data.get("token")
+    if response.status_code == 200 and token:
+        return token
+    raise Exception(f"Imeshindwa kupata Pesapal token: {data}")
+
+
+def get_pesapal_ipn_id(token=None):
+    """Rudisha PESAPAL_IPN_ID kutoka env, au jaribu kusajili IPN URL mara moja."""
+    if PESAPAL_IPN_ID:
+        return PESAPAL_IPN_ID
+    # Auto-register (inatumika mara ya kwanza tu; baada yake weka env)
+    token = token or get_pesapal_token()
+    # callback/ipn path yetu
+    try:
+        base = request.host_url.rstrip("/") if request else ""
+    except Exception:
+        base = ""
+    ipn_url = f"{base}/webhook/pesapal" if base else ""
+    if not ipn_url or "localhost" in ipn_url or "127.0.0.1" in ipn_url:
+        raise Exception(
+            "Weka PESAPAL_IPN_ID kwenye environment. "
+            "Sajili IPN kwenye Pesapal dashboard au call RegisterIPN na URL yako ya live."
+        )
+    url = f"{PESAPAL_BASE}/URLSetup/RegisterIPN"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    payload = {"url": ipn_url, "ipn_notification_type": "POST"}
+    response = requests.post(url, json=payload, headers=headers, timeout=20)
+    data = response.json() if response.content else {}
+    nid = data.get("ipn_id") or data.get("notification_id") or data.get("id")
+    if nid:
+        print(f"Pesapal IPN registered: {nid} → weka PESAPAL_IPN_ID={nid}")
+        return str(nid)
+    raise Exception(f"Imeshindwa kusajili IPN: {data}")
+
+
+def submit_pesapal_order(
+    merchant_ref,
+    amount,
+    description,
+    callback_url,
+    phone=None,
+    email=None,
+    first_name=None,
+    last_name=None,
+):
+    """
+    SubmitOrderRequest → {order_tracking_id, merchant_reference, redirect_url}
+    """
+    token = get_pesapal_token()
+    notification_id = get_pesapal_ipn_id(token)
+    url = f"{PESAPAL_BASE}/Transactions/SubmitOrderRequest"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    billing = {
+        "country_code": "TZ",
+        "first_name": (first_name or "Customer")[:50],
+        "last_name": (last_name or "User")[:50],
+        "line_1": "Tanzania",
+    }
+    if phone:
+        billing["phone_number"] = normalize_phone(phone)
+    if email:
+        billing["email_address"] = email
+    if not phone and not email:
+        billing["phone_number"] = "255700000000"
+
+    payload = {
+        "id": str(merchant_ref)[:50],
+        "currency": "TZS",
+        "amount": float(amount),
+        "description": (description or "Malipo")[:100],
+        "callback_url": callback_url,
+        "notification_id": notification_id,
+        "billing_address": billing,
+    }
+    response = requests.post(url, json=payload, headers=headers, timeout=25)
+    data = response.json() if response.content else {}
+    if response.status_code in (200, 201) and data.get("redirect_url"):
+        return data
+    raise Exception(clean_payment_error(data, f"Pesapal SubmitOrder failed: {data}"))
+
+
+def get_pesapal_transaction_status(order_tracking_id):
+    """GetTransactionStatus → status details."""
+    token = get_pesapal_token()
+    url = f"{PESAPAL_BASE}/Transactions/GetTransactionStatus?orderTrackingId={order_tracking_id}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
+    response = requests.get(url, headers=headers, timeout=20)
+    data = response.json() if response.content else {}
+    if response.status_code == 200:
+        return data
+    raise Exception(f"GetTransactionStatus failed: {data}")
+
+
+def clean_payment_error(data, fallback="Malipo yameshindwa. Jaribu tena."):
+    """Toa ujumbe safi wa kibinadamu kutoka Pesapal / exception — si dict ghafi."""
+    msg = ""
+    if data is None:
+        msg = ""
+    elif isinstance(data, dict):
+        msg = (
+            data.get("message")
+            or data.get("error")
+            or data.get("msg")
+            or data.get("detail")
+            or ""
+        )
+        if not msg and data:
+            # chukua value ya kwanza ya string
+            for v in data.values():
+                if isinstance(v, str) and v.strip():
+                    msg = v
+                    break
+        if not msg:
+            msg = ""
+    else:
+        msg = str(data)
+
+    msg = (msg or "").strip()
+    # Ondoa mabano ya dict yaliyoandikwa kama string
+    if msg.startswith("{") and "message" in msg:
+        import re
+        m = re.search(r"['\"]message['\"]\s*:\s*['\"]([^'\"]+)['\"]", msg)
+        if m:
+            msg = m.group(1)
+        else:
+            msg = msg.replace("{", " ").replace("}", " ").replace("'", " ").replace('"', " ")
+            msg = " ".join(msg.split())
+
+    low = msg.lower()
+    # Tafsiri / ujumbe rafiki
+    if "insufficient funds" in low or "salio" in low or "top up" in low:
+        return "Salio halitoshi kwenye akaunti ya malipo. Ongeza salio kisha ujaribu tena."
+    if "timeout" in low or "timed out" in low:
+        return "Muda wa malipo umeisha (timeout). Jaribu tena."
+    if "invalid phone" in low or "phone number" in low:
+        return "Namba ya simu si sahihi. Hakikisha namba yenye pesa."
+    if "network" in low and ("error" in low or "fail" in low):
+        return "Tatizo la mtandao. Jaribu tena baada ya muda mfupi."
+    if "cancelled" in low or "canceled" in low or "user cancelled" in low:
+        return "Malipo yameghairiwa. Jaribu tena ukiwa tayari."
+    if "pin" in low and ("wrong" in low or "invalid" in low or "incorrect" in low):
+        return "PIN si sahihi. Jaribu tena."
+    if not msg or msg.upper() in ("FAILED", "ERROR", "NONE"):
+        return fallback
+    # Kata urefu, usiwe na mabano mengi
+    msg = msg.replace("{", "").replace("}", "").strip()
+    if len(msg) > 180:
+        msg = msg[:177] + "…"
+    return msg
+
+
+def normalize_phone(phone):
+    phone = phone.strip()
+    if phone.startswith("0"):
+        return "255" + phone[1:]
+    elif phone.startswith("+255"):
+        return phone[1:]
+    elif not phone.startswith("255"):
+        return "255" + phone
+    return phone
+
+
+def send_otp_sms(phone, otp):
+    """
+    Tuma OTP kwa SMS ya kawaida kupitia Beem Africa API.
+    Inahitaji env: SMS_API_KEY, SMS_API_SECRET, (hiari) SMS_SENDER_ID
+    """
+    if not SMS_API_KEY or not SMS_API_SECRET:
+        return False, "SMS haijawezeshwa (SMS_API_KEY/SECRET hazipo)."
+
+    dest = normalize_phone(phone)
+    # Beem inatarajia 255...
+    message = f"OTP yako ni {otp}. Inaisha baada ya dakika 15. Usitoe kwa mtu yeyote. - MR SULE"
+
+    try:
+        import base64
+        url = "https://apisms.beem.africa/v1/send"
+        credentials = f"{SMS_API_KEY}:{SMS_API_SECRET}"
+        token = base64.b64encode(credentials.encode()).decode()
+        headers = {
+            "Authorization": f"Basic {token}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            # source_addr: jina au namba. Bila Sender Name approved, mtandao mara nyingi unaonesha namba ya kawaida
+            "source_addr": (SMS_SENDER_ID or "INFO")[:11],
+            "encoding": 0,
+            "message": message,
+            "recipients": [{"recipient_id": 1, "dest_addr": dest}],
+        }
+        resp = requests.post(url, json=payload, headers=headers, timeout=20)
+        data = resp.json() if resp.content else {}
+        if resp.status_code in (200, 201):
+            return True, "SMS imetumwa"
+        return False, data.get("message") or str(data)[:120] or f"HTTP {resp.status_code}"
+    except Exception as e:
+        return False, str(e)[:150]
+
+
+
+def _push_payload(title, body, url="/", tag="sule"):
+    return json.dumps({
+        "title": title,
+        "body": body,
+        "url": url,
+        "tag": tag,
+        "icon": "/static/icons/icon-192.png",
+        "badge": "/static/icons/icon-192.png",
+    })
+
+
+def send_web_push(subscription_info, title, body, url="/", tag="sule"):
+    """Tuma push moja. Inarudisha True/False. Haileti exception nje."""
+    if not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
+        return False
+    try:
+        from pywebpush import webpush, WebPushException
+        webpush(
+            subscription_info=subscription_info,
+            data=_push_payload(title, body, url, tag),
+            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_claims=VAPID_CLAIMS,
+            timeout=12,
+        )
+        return True
+    except Exception as e:
+        # Futa subscription zilizokufa (410/404)
+        msg = str(e)
+        if "410" in msg or "404" in msg or "Gone" in msg:
+            try:
+                endpoint = (subscription_info or {}).get("endpoint")
+                if endpoint:
+                    PushSubscription.query.filter_by(endpoint=endpoint).delete()
+                    db.session.commit()
+            except Exception:
+                db.session.rollback()
+        print(f"push error: {msg[:160]}")
+        return False
+
+
+def send_push_to_user(user_id, title, body, url="/", tag="sule"):
+    """Tuma push kwa user yoyote aliyejiandikisha (haraka, kila subscription)."""
+    if not user_id:
+        return 0
+    subs = PushSubscription.query.filter_by(user_id=user_id).all()
+    if not subs:
+        return 0
+    sent = 0
+    for s in subs:
+        info = {
+            "endpoint": s.endpoint,
+            "keys": {"p256dh": s.p256dh, "auth": s.auth},
+        }
+        if send_web_push(info, title, body, url, tag):
+            sent += 1
+    return sent
+
+
+def send_push_to_admins(title, body, url="/dashboard", tag="admin"):
+    """Tuma push kwa admin zote."""
+    admins = User.query.filter_by(is_admin=True).all()
+    total = 0
+    for a in admins:
+        total += send_push_to_user(a.id, title, body, url, tag)
+    return total
+
+
+
+# ---------------------------------------------------------------------------
+# Web Push API
+# ---------------------------------------------------------------------------
+@app.route("/api/push/vapid-public-key")
+def push_vapid_public_key():
+    return jsonify({"publicKey": VAPID_PUBLIC_KEY or ""})
+
+
+@app.route("/api/push/subscribe", methods=["POST"])
+@login_required
+def push_subscribe():
+    user = get_current_user()
+    data = request.get_json(silent=True) or {}
+    endpoint = (data.get("endpoint") or "").strip()
+    keys = data.get("keys") or {}
+    p256dh = (keys.get("p256dh") or "").strip()
+    auth = (keys.get("auth") or "").strip()
+    if not endpoint or not p256dh or not auth:
+        return jsonify({"ok": False, "error": "Subscription incomplete"}), 400
+
+    existing = PushSubscription.query.filter_by(endpoint=endpoint).first()
+    if existing:
+        existing.user_id = user.id
+        existing.p256dh = p256dh
+        existing.auth = auth
+    else:
+        db.session.add(PushSubscription(
+            user_id=user.id,
+            endpoint=endpoint,
+            p256dh=p256dh,
+            auth=auth,
+        ))
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/push/unsubscribe", methods=["POST"])
+@login_required
+def push_unsubscribe():
+    user = get_current_user()
+    data = request.get_json(silent=True) or {}
+    endpoint = (data.get("endpoint") or "").strip()
+    if endpoint:
+        PushSubscription.query.filter_by(user_id=user.id, endpoint=endpoint).delete()
+        db.session.commit()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Auth routes
+# ---------------------------------------------------------------------------
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if get_current_user():
+        return redirect(url_for("home"))
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        phone = request.form.get("phone", "").strip()
+        email = request.form.get("email", "").strip() or None
+        password = request.form.get("password", "")
+        if not username or not phone or not password:
+            flash("Jaza taarifa zote muhimu.", "error")
+            return redirect(url_for("register"))
+        if User.query.filter((User.username == username) | (User.phone == phone)).first():
+            flash("Username au namba ya simu tayari inatumika.", "error")
+            return redirect(url_for("register"))
+        if email and User.query.filter_by(email=email).first():
+            flash("Email tayari inatumika.", "error")
+            return redirect(url_for("register"))
+        user = User(username=username, phone=phone, email=email)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        session.permanent = True
+        session["user_id"] = user.id
+        flash("Akaunti imeundwa. Karibu!", "success")
+        return redirect(url_for("home"))
+    return render_template("register.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if get_current_user():
+        return redirect(url_for("home"))
+    if request.method == "POST":
+        identity = request.form.get("identity", "").strip()
+        password = request.form.get("password", "")
+        user = User.query.filter(
+            (User.username == identity)
+            | (User.phone == identity)
+            | (User.email == identity)
+        ).first()
+        if user and user.check_password(password):
+            if getattr(user, "is_blocked", False):
+                flash("Akaunti yako imefungwa. Wasiliana na admin.", "error")
+                return redirect(url_for("login"))
+            session.permanent = True
+            session["user_id"] = user.id
+            flash("Umefanikiwa kuingia.", "success")
+            next_url = session.pop("next_url", None)
+            if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+                return redirect(next_url)
+            return redirect(url_for("home"))
+        flash("Username/namba/email au password si sahihi.", "error")
+        return redirect(url_for("login"))
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("Umetoka kwenye akaunti.", "success")
+    return redirect(url_for("home"))
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    """Bure + otomatiki: namba/username + password mpya. Hakuna SMS."""
+    if get_current_user():
+        return redirect(url_for("home"))
+
+    if request.method == "POST":
+        identity = request.form.get("identity", "").strip()
+        password = request.form.get("password", "")
+        password2 = request.form.get("password2", "")
+
+        if not identity or not password:
+            flash("Jaza namba/username na password mpya.", "error")
+            return redirect(url_for("forgot_password"))
+        if password != password2:
+            flash("Password hazifanani.", "error")
+            return redirect(url_for("forgot_password"))
+        if len(password) < 4:
+            flash("Password iwe angalau herufi 4.", "error")
+            return redirect(url_for("forgot_password"))
+
+        user = User.query.filter(
+            (User.username == identity)
+            | (User.phone == identity)
+            | (User.email == identity)
+        ).first()
+
+        if not user:
+            flash("Akaunti haijapatikana. Hakikisha namba/username ni sahihi.", "error")
+            return redirect(url_for("forgot_password"))
+
+        user.set_password(password)
+        user.reset_otp = ""
+        user.reset_otp_expires = None
+        db.session.commit()
+        flash("Password imebadilishwa! Ingia sasa.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("forgot_password.html")
+
+
+# ---------------------------------------------------------------------------
+# Main pages
+# ---------------------------------------------------------------------------
+@app.route("/")
+def home():
+    bundles = Bundle.query.filter_by(is_active=True).all()
+    offers = Offer.query.filter_by(is_active=True).all()
+    slides = (
+        Slide.query.filter_by(is_active=True)
+        .order_by(Slide.sort_order.asc(), Slide.id.asc())
+        .all()
+    )
+    return render_template(
+        "index.html",
+        bundles=bundles,
+        offers=offers,
+        slides=slides
+    )
+
+
+@app.route("/profile")
+@login_required
+def profile():
+    user = get_current_user()
+    orders = Order.query.filter_by(user_id=user.id).order_by(Order.created_at.desc()).all()
+    return render_template("profile.html", orders=orders)
+
+
+@app.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings():
+    """Hariri taarifa za akaunti: username, simu, email, password."""
+    user = get_current_user()
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        phone = request.form.get("phone", "").strip()
+        email = request.form.get("email", "").strip() or None
+        current_password = request.form.get("current_password", "")
+        new_password = request.form.get("new_password", "")
+        new_password2 = request.form.get("new_password2", "")
+
+        if not username or not phone:
+            flash("Jaza username na namba ya simu.", "error")
+            return redirect(url_for("settings"))
+
+        existing = User.query.filter(
+            ((User.username == username) | (User.phone == phone)) & (User.id != user.id)
+        ).first()
+        if existing:
+            flash("Username au namba tayari inatumika.", "error")
+            return redirect(url_for("settings"))
+
+        if email:
+            email_taken = User.query.filter(
+                (User.email == email) & (User.id != user.id)
+            ).first()
+            if email_taken:
+                flash("Email tayari inatumika.", "error")
+                return redirect(url_for("settings"))
+
+        user.username = username
+        user.phone = phone
+        user.email = email
+
+        # Badilisha password ikiwa imejaa
+        if new_password or new_password2 or current_password:
+            if not current_password:
+                flash("Weka password ya sasa ili ubadilishe password.", "error")
+                return redirect(url_for("settings"))
+            if not user.check_password(current_password):
+                flash("Password ya sasa si sahihi.", "error")
+                return redirect(url_for("settings"))
+            if len(new_password) < 4:
+                flash("Password mpya iwe angalau herufi 4.", "error")
+                return redirect(url_for("settings"))
+            if new_password != new_password2:
+                flash("Password mpya hazifanani.", "error")
+                return redirect(url_for("settings"))
+            user.set_password(new_password)
+
+        db.session.commit()
+        flash("Taarifa za akaunti zimehifadhiwa.", "success")
+        # Admin akarudi dashboard; user kawaida settings
+        if user.is_admin and request.form.get("from_dashboard") == "1":
+            return redirect(url_for("dashboard") + "#account")
+        return redirect(url_for("settings"))
+
+    return render_template("settings.html", user=user)
+
+
+# ---------------------------------------------------------------------------
+# Bundle / Order + ONLINE PAYMENT (Pesapal)
+# ---------------------------------------------------------------------------
+@app.route("/order", methods=["GET", "POST"])
+@login_required
+def order():
+    user = get_current_user()
+    bundles = Bundle.query.filter_by(is_active=True).all()
+    selected_bundle_id = request.args.get("bundle_id")
+    selected_bundle = Bundle.query.get(selected_bundle_id) if selected_bundle_id else None
+    # Deep-link kutoka tangazo/banner:
+    # /order?amount=10GB&price=5000
+    # /order?gb=10&price=5000
+    # /order?offer_amount=10GB&offer_price=5000&offer_title=Ofa
+    offer_title = request.args.get("offer_title") or request.args.get("title") or ""
+    offer_price = request.args.get("offer_price") or request.args.get("price") or ""
+    offer_amount = request.args.get("offer_amount") or request.args.get("amount") or ""
+    gb = request.args.get("gb") or request.args.get("GB") or ""
+    if gb and not offer_amount:
+        offer_amount = f"{gb}GB" if not str(gb).upper().endswith("GB") else str(gb)
+    if selected_bundle and not offer_amount:
+        offer_amount = selected_bundle.amount
+        offer_price = str(selected_bundle.price)
+
+    if request.method == "POST":
+        payment_phone = request.form.get("payment_phone", "").strip()
+        target_phone = request.form.get("target_phone", "").strip()
+        amount = request.form.get("amount", "").strip()
+        price_raw = request.form.get("price", "0").strip()
+        note = request.form.get("note", "").strip()
+
+        try:
+            price = int(price_raw) if price_raw else 0
+        except ValueError:
+            price = 0
+
+        if not payment_phone or not target_phone or not amount:
+            flash("Weka namba ya kulipia, namba ya kuwekewa bando na kiasi cha bundle.", "error")
+            return redirect(url_for("order"))
+
+        # Validate Halotel (061 / 062 / 063)
+        clean_target = target_phone.replace(" ", "").replace("+255", "0")
+        if clean_target.startswith("255"):
+            clean_target = "0" + clean_target[3:]
+        if not clean_target.startswith(("061", "062", "063")):
+            flash("Namba ya kuweka bando lazima iwe ya Halotel (061, 062 au 063).", "error")
+            return redirect(url_for("order"))
+
+        order_note = f"Namba ya Kuwekewa: {target_phone}" + (f" | Maelezo: {note}" if note else "")
+
+        new_order = Order(
+            user_id=user.id,
+            phone=target_phone,
+            amount=amount,
+            price=price,
+            note=order_note,
+            status="awaiting_payment",
+        )
+        db.session.add(new_order)
+        db.session.flush()
+
+        # Short unique reference (max 20 chars)
+        order_ref = f"ORD{new_order.id}{secrets.token_hex(3)}"[:20]
+        new_order.order_reference = order_ref
+        db.session.commit()
+
+        if pesapal_enabled() and price > 0:
+            try:
+                callback = url_for("pesapal_callback", _external=True)
+                data = submit_pesapal_order(
+                    merchant_ref=order_ref,
+                    amount=price,
+                    description=f"Bando {amount} → {target_phone}",
+                    callback_url=callback,
+                    phone=payment_phone,
+                    email=getattr(user, "email", None),
+                    first_name=(user.username or "Customer")[:40],
+                )
+                # hifadhi tracking id kwenye note kwa debug (optional)
+                tracking = data.get("order_tracking_id") or ""
+                if tracking:
+                    new_order.note = (new_order.note or "") + f" | pesapal:{tracking}"
+                    db.session.commit()
+                redirect_url = data.get("redirect_url")
+                flash(
+                    "Unaelekezwa kwenye ukurasa wa malipo wa Pesapal. "
+                    "Chagua M-Pesa / Tigo / Airtel au kadi kisha maliza malipo.",
+                    "success",
+                )
+                return redirect(redirect_url)
+            except Exception as e:
+                new_order.status = "failed"
+                new_order.fail_reason = clean_payment_error(str(e), "Hitilafu ya malipo.")
+                db.session.commit()
+                try:
+                    send_push_to_admins(
+                        "Hitilafu ya malipo (Pesapal)",
+                        f"Oda #{new_order.id}: {str(e)[:80]}",
+                        url="/dashboard",
+                        tag=f"order-fail-{new_order.id}",
+                    )
+                except Exception as _e:
+                    print(f"order fail push: {_e}")
+                flash(f"Hitilafu ya malipo: {clean_payment_error(str(e))}", "error")
+        else:
+            new_order.status = "pending"
+            db.session.commit()
+            try:
+                send_push_to_admins(
+                    "Oda mpya (manual)",
+                    f"#{new_order.id} — {amount} → {target_phone} (TSh {price})",
+                    url="/dashboard",
+                    tag=f"order-new-{new_order.id}",
+                )
+            except Exception as e:
+                print(f"new order push: {e}")
+            flash(
+                f"Request imetumwa! Lipa kwa {PAYMENT_NETWORK} {PAYMENT_NUMBER} ({PAYMENT_NAME}). "
+                "Baada ya malipo, wasiliana na chat.",
+                "success",
+            )
+        return redirect(url_for("profile"))
+
+    return render_template(
+        "order.html",
+        bundles=bundles,
+        selected_bundle=selected_bundle,
+        offer_title=offer_title,
+        offer_price=offer_price,
+        offer_amount=offer_amount
+    )
+
+
+@app.route("/admin/order/status/<int:order_id>", methods=["POST"])
+@admin_required
+def update_order_status(order_id):
+    order_item = Order.query.get_or_404(order_id)
+    status = request.form.get("status", "pending")
+    if status in ("pending", "completed", "rejected", "failed", "awaiting_payment"):
+        order_item.status = status
+        db.session.commit()
+        flash(f"Status ya Oda #{order_item.id} imebadilishwa kuwa '{status}'.", "success")
+        # Push kwa user
+        try:
+            phone = order_item.phone or ""
+            amt = order_item.amount or ""
+            if status == "completed":
+                send_push_to_user(
+                    order_item.user_id,
+                    "Bando limewekwa ✓",
+                    f"Bando {amt} limewekwa kwenye {phone}. Asante!",
+                    url="/profile",
+                    tag=f"order-{order_item.id}",
+                )
+            elif status == "rejected":
+                send_push_to_user(
+                    order_item.user_id,
+                    "Oda imekataliwa",
+                    f"Oda #{order_item.id} ({amt}) imekataliwa. Angalia chat.",
+                    url="/chat",
+                    tag=f"order-{order_item.id}",
+                )
+            elif status == "failed":
+                send_push_to_user(
+                    order_item.user_id,
+                    "Oda imeshindwa",
+                    f"Oda #{order_item.id} imeshindwa. Wasiliana na support.",
+                    url="/chat",
+                    tag=f"order-{order_item.id}",
+                )
+            elif status == "pending":
+                send_push_to_user(
+                    order_item.user_id,
+                    "Oda inashughulikiwa",
+                    f"Oda #{order_item.id} ({amt}) inashughulikiwa.",
+                    url="/profile",
+                    tag=f"order-{order_item.id}",
+                )
+        except Exception as e:
+            print(f"order status push: {e}")
+    else:
+        flash("Status si sahihi.", "error")
+    return redirect(url_for("dashboard"))
+
+
+# ---------------------------------------------------------------------------
+# Pesapal IPN + Callback
+# ---------------------------------------------------------------------------
+def _parse_nakala_pay_ref(order_ref):
+    """NKR{id} au NKR{id}T{timestamp} → NakalaRequest au None."""
+    if not order_ref:
+        return None
+    ref = order_ref.strip().upper()
+    if not ref.startswith("NKR"):
+        return None
+    try:
+        rest = order_ref.strip()[3:]
+        # chukua digits kabla ya T (repay uniqueness)
+        part = rest.split("T")[0].split("-")[0]
+        nid = int("".join(ch for ch in part if ch.isdigit()) or "0")
+        if nid:
+            return NakalaRequest.query.get(nid)
+    except Exception:
+        return None
+    return None
+
+
+
+def _mark_payment_success(merchant_ref, tracking_id=""):
+    """Thibitisha malipo yaliyofanikiwa kwa ORD... au NKR..."""
+    merchant_ref = (merchant_ref or "").strip()
+    if not merchant_ref:
+        return False, "no ref"
+
+    # Nakala
+    nakala_req = _parse_nakala_pay_ref(merchant_ref)
+    if nakala_req:
+        if nakala_req.status in ("pending", "awaiting_payment", "payment_failed", "failed"):
+            if nakala_req.service_type == "license":
+                nakala_req.status = "waiting_control_number"
+            else:
+                nakala_req.status = "paid"
+            if nakala_req.admin_note and "Malipo yameshindwa" in (nakala_req.admin_note or ""):
+                nakala_req.admin_note = ""
+            db.session.commit()
+            try:
+                label = nakala_req.license_type if nakala_req.service_type == "license" else nakala_req.service_type
+                send_push_to_admins(
+                    "Nakala — malipo yamepokelewa ✓",
+                    f"{nakala_req.request_code}: {label or '—'}"
+                    + (f" · {nakala_req.license_location}" if nakala_req.license_location else ""),
+                    url="/dashboard",
+                    tag=f"nakala-pay-{nakala_req.id}",
+                )
+                send_push_to_user(
+                    nakala_req.user_id,
+                    "Malipo yamepokelewa ✓",
+                    f"Ombi {nakala_req.request_code} limelipwa. Litaanza kushughulikiwa.",
+                    url=f"/nakala/{nakala_req.id}",
+                    tag=f"nakala-pay-{nakala_req.id}",
+                )
+            except Exception as e:
+                print(f"nakala pay push: {e}")
+        return True, "nakala"
+
+    # Oda bando
+    order = Order.query.filter_by(order_reference=merchant_ref).first()
+    if order:
+        if order.status in ("awaiting_payment", "failed"):
+            order.status = "pending"
+            order.fail_reason = ""
+            if tracking_id and tracking_id not in (order.note or ""):
+                order.note = (order.note or "") + f" | pesapal:{tracking_id}"
+            db.session.commit()
+            try:
+                send_push_to_admins(
+                    "Malipo yamepokelewa ✓",
+                    f"Oda #{order.id} — {order.amount}. Namba: {order.phone}",
+                    url="/dashboard",
+                    tag=f"pay-ok-{order.id}",
+                )
+                send_push_to_user(
+                    order.user_id,
+                    "Malipo yamepokelewa ✓",
+                    f"Malipo ya oda #{order.id} yamefanikiwa. Inashughulikiwa sasa.",
+                    url="/profile",
+                    tag=f"pay-ok-{order.id}",
+                )
+            except Exception as e:
+                print(f"order pay push: {e}")
+        return True, "order"
+
+    return False, "not found"
+
+
+def _mark_payment_failed(merchant_ref, reason="Malipo yameshindwa."):
+    merchant_ref = (merchant_ref or "").strip()
+    reason = clean_payment_error(reason, "Malipo yameshindwa.")[:200]
+
+    nakala_req = _parse_nakala_pay_ref(merchant_ref)
+    if nakala_req:
+        if nakala_req.status in ("pending", "awaiting_payment"):
+            nakala_req.status = "payment_failed"
+            nakala_req.admin_note = reason
+            db.session.commit()
+            try:
+                send_push_to_user(
+                    nakala_req.user_id,
+                    "Malipo yameshindwa",
+                    f"Ombi {nakala_req.request_code}: malipo yameshindwa. Fungua ombi na ulipe tena.",
+                    url=f"/nakala/{nakala_req.id}",
+                    tag=f"nakala-fail-{nakala_req.id}",
+                )
+            except Exception as e:
+                print(f"nakala fail push: {e}")
+        return True, "nakala"
+
+    order = Order.query.filter_by(order_reference=merchant_ref).first()
+    if order:
+        order.status = "failed"
+        order.fail_reason = reason
+        db.session.commit()
+        try:
+            send_push_to_admins(
+                "Malipo yameshindwa ⚠",
+                f"Oda #{order.id} — {order.amount}. {order.fail_reason}",
+                url="/dashboard",
+                tag=f"pay-fail-{order.id}",
+            )
+            send_push_to_user(
+                order.user_id,
+                "Malipo yameshindwa",
+                f"Malipo ya oda #{order.id} yameshindwa. Jaribu tena.",
+                url="/order",
+                tag=f"pay-fail-{order.id}",
+            )
+        except Exception as e:
+            print(f"order fail push: {e}")
+        return True, "order"
+
+    return False, "not found"
+
+
+def _process_pesapal_notification(order_tracking_id, merchant_ref):
+    """
+    Piga GetTransactionStatus kisha update status.
+    Status codes (Pesapal): 0=INVALID, 1=COMPLETED, 2=FAILED, 3=REVERSED
+    """
+    try:
+        st = get_pesapal_transaction_status(order_tracking_id)
+    except Exception as e:
+        print(f"pesapal status error: {e}")
+        return False, str(e)
+
+    # support both shapes
+    status_code = st.get("status_code")
+    if status_code is None:
+        status_code = st.get("payment_status_description") or st.get("status")
+    payment_status = (st.get("payment_status_description") or st.get("status") or "").upper()
+    message = (st.get("message") or st.get("description") or payment_status or "")[:200]
+
+    # Completed
+    completed = False
+    if status_code in (1, "1", 200, "200"):
+        completed = True
+    if str(payment_status).upper() in ("COMPLETED", "SUCCESS", "SETTLED", "PAID"):
+        completed = True
+
+    failed = False
+    if status_code in (2, "2"):
+        failed = True
+    if str(payment_status).upper() in ("FAILED", "INVALID", "REVERSED"):
+        failed = True
+
+    if not merchant_ref:
+        merchant_ref = st.get("merchant_reference") or ""
+
+    if completed:
+        return _mark_payment_success(merchant_ref, order_tracking_id)
+    if failed:
+        return _mark_payment_failed(merchant_ref, message or "Malipo yameshindwa.")
+    # still pending — usibadilishe
+    return True, "pending"
+
+
+@app.route("/webhook/pesapal", methods=["GET", "POST"])
+def pesapal_webhook():
+    """
+    Pesapal IPN — malipo yanathibitishwa HAPPA (na kwenye callback).
+    Params: OrderTrackingId, OrderMerchantReference, OrderNotificationType
+    """
+    if request.method == "POST":
+        data = request.get_json(force=True, silent=True) or {}
+        if not data:
+            data = request.form.to_dict() if request.form else {}
+        tracking = (data.get("OrderTrackingId") or data.get("orderTrackingId") or "").strip()
+        merchant_ref = (data.get("OrderMerchantReference") or data.get("orderMerchantReference") or "").strip()
+    else:
+        tracking = (request.args.get("OrderTrackingId") or "").strip()
+        merchant_ref = (request.args.get("OrderMerchantReference") or "").strip()
+
+    if not tracking:
+        return jsonify({"ok": False, "error": "No OrderTrackingId"}), 400
+
+    ok, kind = _process_pesapal_notification(tracking, merchant_ref)
+    # Pesapal inatarajia response yenye orderTrackingId + status
+    return jsonify({
+        "orderNotificationType": "IPNCHANGE",
+        "orderTrackingId": tracking,
+        "orderMerchantReference": merchant_ref,
+        "status": 200 if ok else 500,
+        "ok": ok,
+        "type": kind,
+    }), 200
+
+
+@app.route("/payment/pesapal/callback")
+def pesapal_callback():
+    """
+    User anarudi hapa baada ya kulipa kwenye Pesapal.
+    Thibitisha status tena (IPN inaweza kuwa haijafika bado).
+    """
+    tracking = (request.args.get("OrderTrackingId") or "").strip()
+    merchant_ref = (request.args.get("OrderMerchantReference") or "").strip()
+
+    if tracking:
+        try:
+            ok, kind = _process_pesapal_notification(tracking, merchant_ref)
+            if kind == "nakala":
+                flash("Malipo yamepokelewa! Ombi lako linashughulikiwa.", "success")
+                nak = _parse_nakala_pay_ref(merchant_ref)
+                if nak:
+                    return redirect(url_for("nakala_detail", req_id=nak.id))
+                return redirect(url_for("my_nakala"))
+            if kind == "order":
+                flash("Malipo yamepokelewa! Oda yako inashughulikiwa.", "success")
+                return redirect(url_for("profile"))
+            if kind == "pending":
+                flash("Malipo yanashughulikiwa. Subiri kidogo — status itasasishwa kiotomatiki.", "info")
+            else:
+                flash("Hatukuweza kuthibitisha malipo bado. Angalia baada ya dakika chache.", "warning")
+        except Exception as e:
+            flash(f"Hitilafu ya kuthibitisha malipo: {clean_payment_error(str(e))}", "error")
+    else:
+        flash("Hakuna taarifa za malipo. Angalia oda/ombi lako.", "warning")
+
+    return redirect(url_for("profile"))
+
+
+# Keep old path for safety (redirect)
+@app.route("/webhook/clickpesa", methods=["POST", "GET"])
+def clickpesa_webhook_legacy():
+    return jsonify({"ok": False, "error": "ClickPesa imebadilishwa na Pesapal. Tumia /webhook/pesapal"}), 410
+
+
+# ---------------------------------------------------------------------------
+# Chat, Agency, Dashboard
+# ---------------------------------------------------------------------------
+@app.route("/chat")
+@login_required
+def chat():
+    user = get_current_user()
+    messages = Message.query.filter_by(user_id=user.id).order_by(Message.created_at.asc()).all()
+    return render_template("chat.html", messages=messages)
+
+
+@app.route("/send_message", methods=["POST"])
+@login_required
+def send_message():
+    user = get_current_user()
+    text = request.form.get("message", "").strip()
+    image_file = request.files.get("image")
+    image_name = None
+    if image_file and image_file.filename and allowed_file(image_file.filename):
+        ext = image_file.filename.rsplit(".", 1)[-1].lower()
+        filename = secure_filename(f"chat_{user.id}_{secrets.token_hex(4)}.{ext}")
+        image_name = storage_upload(image_file, f"chat/{filename}") or None
+    if not text and not image_name:
+        return jsonify({"success": False, "error": "Ujumbe tupu"})
+    msg = Message(
+        user_id=user.id,
+        sender="customer",
+        message=text,
+        image=image_name,
+        is_delivered=False,
+        is_read=False,
+    )
+    db.session.add(msg)
+    db.session.commit()
+    try:
+        # Usitume notification ikiwa admin yupo kwenye chat hii sasa
+        if not is_viewing_chat(user.id, "admin"):
+            preview = (text or "Picha")[:80]
+            send_push_to_admins(
+                f"Ujumbe mpya: {user.username}",
+                preview,
+                url=f"/admin/chat/{user.id}",
+                tag=f"chat-user-{user.id}",
+            )
+    except Exception as e:
+        print(f"customer chat push: {e}")
+    return jsonify({"success": True, "message": message_to_dict(msg)})
+
+
+@app.route("/admin/messages")
+@admin_required
+def admin_messages():
+    """Orodha ya mazungumzo (users wenye ujumbe) kwa admin."""
+    from sqlalchemy import func, desc
+    subq = (
+        db.session.query(
+            Message.user_id,
+            func.max(Message.created_at).label("last_at"),
+            func.count(Message.id).label("msg_count"),
+        )
+        .group_by(Message.user_id)
+        .subquery()
+    )
+    rows = (
+        db.session.query(User, subq.c.last_at, subq.c.msg_count)
+        .join(subq, User.id == subq.c.user_id)
+        .order_by(desc(subq.c.last_at))
+        .limit(200)
+        .all()
+    )
+    threads = []
+    for user, last_at, msg_count in rows:
+        last_msg = (
+            Message.query.filter_by(user_id=user.id)
+            .order_by(Message.created_at.desc())
+            .first()
+        )
+        last_text = "—"
+        last_sender = ""
+        unread = False
+        if last_msg:
+            last_text = (last_msg.message or ("[Picha]" if last_msg.image else "—"))[:120]
+            last_sender = last_msg.sender or ""
+            unread = last_sender == "customer"
+        threads.append({
+            "user": user,
+            "last_at": last_at,
+            "msg_count": msg_count,
+            "last_message": last_text,
+            "last_sender": last_sender,
+            "unread_from_customer": unread,
+        })
+    return render_template("admin_messages.html", threads=threads)
+
+
+
+@app.route("/api/chat/poll")
+@login_required
+def api_chat_poll():
+    """Mteja: ujumbe mpya + mark admin messages delivered/read."""
+    user = get_current_user()
+    touch_chat_presence(user.id, "customer")
+    after_id = request.args.get("after_id", type=int) or 0
+    # Admin messages → delivered + read (mteja yupo kwenye chat)
+    pending = (
+        Message.query.filter_by(user_id=user.id, sender="admin")
+        .filter((Message.is_delivered.is_(False)) | (Message.is_read.is_(False)))
+        .all()
+    )
+    if pending:
+        for m in pending:
+            m.is_delivered = True
+            m.is_read = True
+        db.session.commit()
+    q = Message.query.filter_by(user_id=user.id)
+    if after_id:
+        q = q.filter(Message.id > after_id)
+    msgs = q.order_by(Message.created_at.asc()).all()
+    # Status ya ujumbe wa mteja mwenyewe (ticks)
+    own = (
+        Message.query.filter_by(user_id=user.id, sender="customer")
+        .order_by(Message.id.desc())
+        .limit(50)
+        .all()
+    )
+    statuses = {m.id: {"is_delivered": bool(m.is_delivered), "is_read": bool(m.is_read)} for m in own}
+    return jsonify({
+        "ok": True,
+        "messages": [message_to_dict(m) for m in msgs],
+        "statuses": statuses,
+    })
+
+
+@app.route("/api/admin/chat/<int:user_id>/poll")
+@admin_required
+def api_admin_chat_poll(user_id):
+    """Admin: ujumbe mpya + mark customer messages delivered/read."""
+    user = User.query.get_or_404(user_id)
+    touch_chat_presence(user.id, "admin")
+    after_id = request.args.get("after_id", type=int) or 0
+    pending = (
+        Message.query.filter_by(user_id=user.id, sender="customer")
+        .filter((Message.is_delivered.is_(False)) | (Message.is_read.is_(False)))
+        .all()
+    )
+    if pending:
+        for m in pending:
+            m.is_delivered = True
+            m.is_read = True
+        db.session.commit()
+    q = Message.query.filter_by(user_id=user.id)
+    if after_id:
+        q = q.filter(Message.id > after_id)
+    msgs = q.order_by(Message.created_at.asc()).all()
+    own = (
+        Message.query.filter_by(user_id=user.id, sender="admin")
+        .order_by(Message.id.desc())
+        .limit(50)
+        .all()
+    )
+    statuses = {m.id: {"is_delivered": bool(m.is_delivered), "is_read": bool(m.is_read)} for m in own}
+    return jsonify({
+        "ok": True,
+        "messages": [message_to_dict(m) for m in msgs],
+        "statuses": statuses,
+    })
+
+
+@app.route("/admin/chat/<int:user_id>")
+@admin_required
+def admin_chat(user_id):
+    user = User.query.get_or_404(user_id)
+    messages = Message.query.filter_by(user_id=user.id).order_by(Message.created_at.asc()).all()
+    return render_template("admin_chat.html", user=user, messages=messages)
+
+
+@app.route("/admin/send_message/<int:user_id>", methods=["POST"])
+@admin_required
+def admin_send_message(user_id):
+    user = User.query.get_or_404(user_id)
+    text = request.form.get("message", "").strip()
+    image_file = request.files.get("image")
+    image_name = None
+    if image_file and image_file.filename and allowed_file(image_file.filename):
+        ext = image_file.filename.rsplit(".", 1)[-1].lower()
+        filename = secure_filename(f"chat_admin_{user.id}_{secrets.token_hex(4)}.{ext}")
+        image_name = storage_upload(image_file, f"chat/{filename}") or None
+    if not text and not image_name:
+        return jsonify({"success": False})
+    msg = Message(
+        user_id=user.id,
+        sender="admin",
+        message=text,
+        image=image_name,
+        is_delivered=False,
+        is_read=False,
+    )
+    db.session.add(msg)
+    db.session.commit()
+    try:
+        # Usitume notification ikiwa mteja yupo kwenye chat sasa
+        if not is_viewing_chat(user.id, "customer"):
+            preview = (text or "Picha")[:80]
+            send_push_to_user(
+                user.id,
+                "Jibu jipya kutoka Admin",
+                preview,
+                url="/chat",
+                tag=f"chat-admin-{user.id}",
+            )
+    except Exception as e:
+        print(f"admin chat push: {e}")
+    return jsonify({"success": True, "message": message_to_dict(msg)})
+
+
+
+def get_agency_form_fields(network, service_type):
+    """Return form config for network + service_type (lipa|uwakala)."""
+    network = network.strip()
+    service_type = service_type.strip().lower()
+
+    if network == "Vodacom" and service_type == "lipa":
+        return {
+            "form_title": "Usajili wa Lipa Namba (M-Pesa Merchant)",
+            "service_label": "Lipa Namba / Merchant",
+            "fields": [
+                {"name": "full_name", "label": "1. Jina Kamili (Full Name)", "type": "text", "required": True, "placeholder": "Mfano: Juma Ally Hassan"},
+                {"name": "tin_number", "label": "2. TIN Number", "type": "text", "required": True, "placeholder": "Namba ya TIN"},
+                {"name": "target_phone", "label": "3. Namba ya Simu (haijawezeshwa M-Pesa)", "type": "tel", "required": True, "placeholder": "07XXXXXXXX", "help": "Namba unayotaka kuisajili kama Lipa Namba"},
+                {"name": "tin_cert", "label": "4. TIN Certificate (PDF au Picha)", "type": "file", "required": True, "accept": "image/*,.pdf", "hint": "Pakia PDF au picha. Unaweza kupiga picha moja kwa moja."},
+                {"name": "id_type", "label": "5. Aina ya Kitambulisho", "type": "select", "required": True, "options": [
+                    "Kitambulisho cha Mpiga Kura",
+                    "Kitambulisho cha Taifa (NIDA/NIN)",
+                    "Passport",
+                ]},
+                {"name": "id_doc", "label": "6. Pakia Kitambulisho (PDF au Picha)", "type": "file", "required": True, "accept": "image/*,.pdf"},
+                {"name": "shop_photo", "label": "7. Picha ya Duka / Kioski", "type": "file", "required": True, "accept": "image/*", "hint": "Piga picha au chagua picha ya duka lako"},
+            ],
+        }
+
+    if network == "Vodacom" and service_type == "uwakala":
+        return {"contact": True, "title": "Huduma za Uwakala / Usajili wa Laini", "message": "Wasiliana na admin atakupa maelekezo kamili ya kupata huduma hii.", "service_label": "Uwakala"}
+
+    if network == "Airtel" and service_type == "lipa":
+        return {
+            "form_title": "Usajili wa Lipa Namba (Airtel Money)",
+            "service_label": "Lipa Namba / Merchant",
+            "fields": [
+                {"name": "target_phone", "label": "Namba ya Airtel unayotaka iwe Lipa Namba", "type": "tel", "required": True, "placeholder": "07XXXXXXXX"},
+                {"name": "full_name", "label": "Jina Kamili", "type": "text", "required": True, "placeholder": "Majina matatu"},
+                {"name": "contact_phone", "label": "Namba ya Mawasiliano", "type": "tel", "required": True, "placeholder": "07XXXXXXXX"},
+            ],
+        }
+
+    if network == "Airtel" and service_type == "uwakala":
+        return {
+            "form_title": "Ombi la Uwakala (Airtel)",
+            "service_label": "Uwakala",
+            "fields": [
+                {"name": "target_phone", "label": "1. Namba ya Airtel unayotaka iwe ya Uwakala", "type": "tel", "required": True, "placeholder": "07XXXXXXXX"},
+                {"name": "full_name", "label": "2. Jina Kamili", "type": "text", "required": True, "placeholder": "Majina matatu"},
+                {"name": "tin_cert", "label": "3. TIN Certificate (PDF au Picha)", "type": "file", "required": True, "accept": "image/*,.pdf"},
+                {"name": "shop_photo", "label": "4. Picha ya Duka / Kioski", "type": "file", "required": True, "accept": "image/*", "hint": "Piga picha au chagua picha ya duka lako"},
+            ],
+        }
+
+    if network == "Yas" and service_type == "lipa":
+        return {
+            "form_title": "Usajili wa Lipa Namba (Mixx by Yas)",
+            "service_label": "Lipa Namba",
+            "fields": [
+                {"name": "target_phone", "label": "1. Namba ya Mixx by Yas unayotaka iwe Lipa Namba", "type": "tel", "required": True, "placeholder": "07XXXXXXXX"},
+                {"name": "phone", "label": "2. Namba ya Pili (simu nyingine)", "type": "tel", "required": False, "placeholder": "07XXXXXXXX (si lazima)"},
+                {"name": "contact_phone", "label": "3. Namba ya Tatu / Mawasiliano", "type": "tel", "required": True, "placeholder": "07XXXXXXXX"},
+                {"name": "tin_cert", "label": "4. Certificate (PDF au Picha)", "type": "file", "required": True, "accept": "image/*,.pdf"},
+                {"name": "full_name", "label": "5. Majina Matatu (Full Name)", "type": "text", "required": True, "placeholder": "Jina la kwanza, kati, mwisho"},
+                {"name": "shop_photo", "label": "6. Picha ya Duka / Kioski", "type": "file", "required": True, "accept": "image/*", "hint": "Piga picha au chagua picha ya duka lako"},
+            ],
+        }
+
+    if network == "Yas" and service_type == "uwakala":
+        return {"contact": True, "title": "Huduma ya Uwakala (Yas)", "message": "Huduma hii haipatikani kwa sasa. Tafadhali wasiliana na admini kupitia namba ya WhatsApp au simu ya kawaida.", "service_label": "Uwakala"}
+
+    if network == "Halotel" and service_type == "lipa":
+        return {
+            "form_title": "Usajili wa Lipa Namba (HaloPesa)",
+            "service_label": "Lipa Namba",
+            "fields": [
+                {"name": "target_phone", "label": "1. Namba ya Halotel (haijawezeshwa HaloPesa)", "type": "tel", "required": True, "placeholder": "06XXXXXXXX", "help": "Namba unayotaka iwe Lipa Namba"},
+                {"name": "tin_number", "label": "2. TIN Number", "type": "text", "required": True, "placeholder": "Namba ya TIN"},
+                {"name": "tin_cert", "label": "3. TIN Certificate (PDF au Picha)", "type": "file", "required": True, "accept": "image/*,.pdf"},
+                {"name": "id_type", "label": "4. Aina ya Kitambulisho", "type": "select", "required": True, "options": [
+                    "NIDA / NIN",
+                    "Kitambulisho cha Mpiga Kura",
+                    "Leseni ya Udereva",
+                    "Passport",
+                ]},
+                {"name": "id_doc", "label": "5. Pakia Kitambulisho (PDF au Picha)", "type": "file", "required": True, "accept": "image/*,.pdf"},
+                {"name": "full_name", "label": "6. Majina Matatu (Full Name)", "type": "text", "required": True, "placeholder": "Majina matatu"},
+                {"name": "contact_phone", "label": "7. Namba ya Mawasiliano", "type": "tel", "required": True, "placeholder": "07XXXXXXXX"},
+            ],
+        }
+
+    if network == "Halotel" and service_type == "uwakala":
+        return {
+            "form_title": "Ombi la Uwakala (Halotel)",
+            "service_label": "Uwakala",
+            "fields": [
+                {"name": "target_phone", "label": "1. Namba ya Halotel (yenye salio ≥ 100,000)", "type": "tel", "required": True, "placeholder": "06XXXXXXXX", "help": "Lazima iwe na salio la angalau TSh 100,000"},
+                {"name": "tin_number", "label": "2. TIN Number", "type": "text", "required": True, "placeholder": "Namba ya TIN"},
+                {"name": "full_name", "label": "3. Jina Kamili", "type": "text", "required": True, "placeholder": "Majina matatu"},
+                {"name": "tin_cert", "label": "4. TIN Certificate (PDF au Picha)", "type": "file", "required": True, "accept": "image/*,.pdf"},
+                {"name": "id_type", "label": "5. Aina ya Kitambulisho", "type": "select", "required": True, "options": [
+                    "NIDA / NIN",
+                    "Kitambulisho cha Mpiga Kura",
+                    "Leseni ya Udereva",
+                    "Passport",
+                ]},
+                {"name": "id_doc", "label": "6. Pakia Kitambulisho (PDF au Picha)", "type": "file", "required": True, "accept": "image/*,.pdf"},
+            ],
+        }
+
+    return {
+        "form_title": f"{network} – {service_type}",
+        "service_label": service_type.title(),
+        "fields": [
+            {"name": "full_name", "label": "Jina Kamili", "type": "text", "required": True},
+            {"name": "phone", "label": "Namba ya Simu", "type": "tel", "required": True},
+        ],
+    }
+
+
+@app.route("/agency")
+@login_required
+def agency():
+    return render_template("agency.html")
+
+
+@app.route("/agency/<network>")
+@login_required
+def agency_network(network):
+    coming_soon = network in ("TTCL", "Azam Pesa")
+    return render_template(
+        "agency_network.html",
+        network=network,
+        coming_soon=coming_soon,
+    )
+
+
+@app.route("/agency/<network>/<service_type>", methods=["GET", "POST"])
+@login_required
+def agency_service(network, service_type):
+    service_type = service_type.lower().strip()
+    if service_type not in ("lipa", "uwakala"):
+        flash("Huduma si sahihi.", "error")
+        return redirect(url_for("agency_network", network=network))
+
+    if network in ("TTCL", "Azam Pesa"):
+        return redirect(url_for("agency_network", network=network))
+
+    config = get_agency_form_fields(network, service_type)
+
+    if config.get("contact"):
+        return render_template(
+            "agency_contact.html",
+            network=network,
+            service_label=config.get("service_label", service_type),
+            title=config.get("title", "Wasiliana na Admin"),
+            message=config.get("message", ""),
+        )
+
+    if request.method == "POST":
+        data = {}
+        for f in config["fields"]:
+            if f["type"] in ("text", "tel", "select"):
+                data[f["name"]] = request.form.get(f["name"], "").strip()
+
+        for f in config["fields"]:
+            if f.get("required") and f["type"] in ("text", "tel", "select"):
+                if not data.get(f["name"]):
+                    flash(f"Tafadhali jaza: {f['label']}", "error")
+                    return redirect(url_for("agency_service", network=network, service_type=service_type))
+
+        file_fields = [f for f in config["fields"] if f["type"] == "file"]
+        file_paths = {}
+        for f in file_fields:
+            fs = request.files.get(f["name"])
+            if f.get("required") and (not fs or not fs.filename):
+                flash(f"Tafadhali pakia: {f['label']}", "error")
+                return redirect(url_for("agency_service", network=network, service_type=service_type))
+            if fs and fs.filename:
+                if not allowed_agency_file(fs.filename):
+                    flash("Aina ya faili hairuhusiwi. Ruhusu: PDF, JPG, PNG, WEBP.", "error")
+                    return redirect(url_for("agency_service", network=network, service_type=service_type))
+                path = save_agency_file(fs, prefix=f["name"])
+                file_paths[f["name"]] = path
+
+        draft = {
+            "network": network,
+            "service_type": service_type,
+            "service_label": config.get("service_label", service_type),
+            "form_title": config.get("form_title", ""),
+            "data": data,
+            "files": file_paths,
+            "fields": config["fields"],
+        }
+        keep_session_alive()
+        session["agency_draft"] = draft
+        return redirect(url_for("agency_review"))
+
+    return render_template(
+        "agency_form.html",
+        network=network,
+        service_type=service_type,
+        service_label=config.get("service_label", service_type),
+        form_title=config.get("form_title", "Jaza Taarifa"),
+        fields=config["fields"],
+    )
+
+
+@app.route("/agency/review")
+@login_required
+def agency_review():
+    draft = session.get("agency_draft")
+    if not draft:
+        flash("Hakuna taarifa za kukaguliwa. Anza upya.", "error")
+        return redirect(url_for("agency"))
+
+    review_items = []
+    for f in draft.get("fields", []):
+        name = f["name"]
+        label = f["label"]
+        if f["type"] == "file":
+            path = draft.get("files", {}).get(name, "")
+            review_items.append({
+                "label": label,
+                "value": os.path.basename(path) if path else "—",
+                "is_file": True,
+            })
+        else:
+            review_items.append({
+                "label": label,
+                "value": draft.get("data", {}).get(name, ""),
+                "is_file": False,
+            })
+
+    return render_template(
+        "agency_review.html",
+        network=draft["network"],
+        service_type=draft["service_type"],
+        service_label=draft.get("service_label", ""),
+        review_items=review_items,
+    )
+
+
+@app.route("/agency/submit", methods=["POST"])
+@login_required
+def agency_submit():
+    user = get_current_user()
+    draft = session.get("agency_draft")
+    if not draft:
+        flash("Hakuna taarifa. Anza upya.", "error")
+        return redirect(url_for("agency"))
+
+    data = draft.get("data", {})
+    files = draft.get("files", {})
+    network = draft["network"]
+    service_type = draft["service_type"]
+    service_label = draft.get("service_label", service_type)
+
+    code = generate_application_code()
+    while Application.query.filter_by(application_code=code).first():
+        code = generate_application_code()
+
+    full_name = data.get("full_name") or data.get("target_phone") or "—"
+    phone = data.get("contact_phone") or data.get("phone") or data.get("target_phone") or user.phone
+
+    app_obj = Application(
+        application_code=code,
+        user_id=user.id,
+        network=network,
+        service_type=f"{service_label} ({network})",
+        full_name=full_name,
+        phone=phone,
+        id_type=data.get("id_type", ""),
+        id_number=data.get("id_number", ""),
+        tin_number=data.get("tin_number", ""),
+        target_phone=data.get("target_phone", ""),
+        contact_phone=data.get("contact_phone", ""),
+        tin_cert=files.get("tin_cert", ""),
+        id_doc=files.get("id_doc", ""),
+        shop_photo=files.get("shop_photo", ""),
+        description=data.get("description", ""),
+        status="pending",
+    )
+    db.session.add(app_obj)
+    db.session.flush()
+
+    sys_msg = AgencyMessage(
+        application_id=app_obj.id,
+        sender="system",
+        message=f"Ombi {code} limepokelewa ({network} – {service_label}). Status: Inasubiri. Timu yetu itakujibu hivi karibuni.",
+    )
+    db.session.add(sys_msg)
+    db.session.commit()
+
+    try:
+        send_push_to_admins(
+            "Ombi jipya la Uwakala",
+            f"{code} — {network} / {service_label} — {full_name}",
+            url="/dashboard",
+            tag=f"agency-new-{app_obj.id}",
+        )
+    except Exception as e:
+        print(f"agency new push: {e}")
+
+    session.pop("agency_draft", None)
+    flash(f"Ombi limetumwa! Code: {code}. Unaweza kufuatilia kwenye Maombi Yangu.", "success")
+    return redirect(url_for("my_applications"))
+
+
+@app.route("/my-applications")
+@login_required
+def my_applications():
+    user = get_current_user()
+    applications = (
+        Application.query.filter_by(user_id=user.id)
+        .order_by(Application.created_at.desc())
+        .all()
+    )
+    return render_template("my_applications.html", applications=applications)
+
+
+@app.route("/application/<int:application_id>", methods=["GET", "POST"])
+@login_required
+def application_detail(application_id):
+    user = get_current_user()
+    application = Application.query.get_or_404(application_id)
+    if application.user_id != user.id and not user.is_admin:
+        flash("Huna ruhusa.", "error")
+        return redirect(url_for("my_applications"))
+    if request.method == "POST":
+        if application.status in ("completed", "rejected"):
+            flash("Ombi hili limefungwa.", "error")
+            return redirect(url_for("application_detail", application_id=application.id))
+        text = request.form.get("message", "").strip()
+        if text:
+            msg = AgencyMessage(
+                application_id=application.id,
+                sender="customer",
+                message=text,
+            )
+            db.session.add(msg)
+            db.session.commit()
+            try:
+                send_push_to_admins(
+                    f"Chat Uwakala: {application.application_code}",
+                    (text or "")[:80],
+                    url=f"/admin/agency/chat/{application.id}",
+                    tag=f"agency-chat-{application.id}",
+                )
+            except Exception as e:
+                print(f"agency customer chat push: {e}")
+            flash("Ujumbe umetumwa.", "success")
+        return redirect(url_for("application_detail", application_id=application.id))
+    messages = (
+        AgencyMessage.query.filter_by(application_id=application.id)
+        .order_by(AgencyMessage.created_at.asc())
+        .all()
+    )
+    return render_template(
+        "application_detail.html",
+        application=application,
+        messages=messages,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Nakala (TIN, Leseni, Cheti, Biashara) — Online NIDA imeondolewa
+# ---------------------------------------------------------------------------
+def generate_nakala_code():
+    return "NK-" + secrets.token_hex(4).upper()
+
+
+@app.route("/nakala")
+@login_required
+def nakala():
+    return render_template("nakala.html")
+
+
+@app.route("/nakala/tin", methods=["GET", "POST"])
+@login_required
+def nakala_tin():
+    if request.method == "POST":
+        had_tin = request.form.get("had_tin_before", "").strip()
+        if had_tin == "ndiyo":
+            flash("Kwa sasa huduma hii inapatikana kwa wale ambao hawajawahi kuwa na TIN. Wasiliana na admin.", "error")
+            return redirect(url_for("nakala_tin"))
+
+        full_name = request.form.get("full_name", "").strip()
+        mother_name = request.form.get("mother_name", "").strip()
+        nida_number = request.form.get("nida_number", "").strip()
+        phone1 = request.form.get("phone1", "").strip()
+        phone2 = request.form.get("phone2", "").strip()
+        primary_school = request.form.get("primary_school", "").strip()
+        year_completed = request.form.get("year_completed", "").strip()
+        school_district = request.form.get("school_district", "").strip()
+        school_region = request.form.get("school_region", "").strip()
+        nida_reg_district = request.form.get("nida_reg_district", "").strip()
+        nida_reg_region = request.form.get("nida_reg_region", "").strip()
+        nida_reg_street = request.form.get("nida_reg_street", "").strip()
+
+        if not all([full_name, mother_name, nida_number, phone1, primary_school,
+                    year_completed, school_district, school_region,
+                    nida_reg_district, nida_reg_region, nida_reg_street]):
+            flash("Jaza taarifa zote muhimu.", "error")
+            return redirect(url_for("nakala_tin"))
+
+        if len(nida_number) > 20 or not nida_number.isdigit():
+            flash("Namba ya NIDA/NIN lazima iwe namba tu (max 20).", "error")
+            return redirect(url_for("nakala_tin"))
+
+        keep_session_alive()
+        session["nakala_draft"] = {
+            "service_type": "tin",
+            "had_tin_before": had_tin,
+            "full_name": full_name,
+            "mother_name": mother_name,
+            "nida_number": nida_number,
+            "phone1": phone1,
+            "phone2": phone2,
+            "primary_school": primary_school,
+            "year_completed": year_completed,
+            "school_district": school_district,
+            "school_region": school_region,
+            "nida_reg_district": nida_reg_district,
+            "nida_reg_region": nida_reg_region,
+            "nida_reg_street": nida_reg_street,
+            "price": 3000,
+        }
+        return redirect(url_for("nakala_review"))
+
+    admin = User.query.filter_by(is_admin=True).first()
+    return render_template(
+        "nakala_tin.html",
+        admin_phone=(admin.phone if admin else None) or "0700000000",
+        admin_email=(admin.email if admin else None),
+    )
+
+
+
+# Bei za Leseni za Biashara (Halmashauri) — katalogi kamili kategoria 1–24
+LICENSE_CATEGORIES = [
+    "Maduka",
+    "Hardware",
+    "Mobile Money",
+    "Hotel",
+    "Salon",
+    "Food",
+    "Mitumba na Vitabu",
+    "Magari",
+    "Mifugo",
+    "Afya",
+    "Ujenzi",
+    "Agency",
+    "Fedha",
+    "Usafirishaji",
+    "Bima na Real Estate",
+    "Telecom",
+    "Media",
+    "Viwanda",
+    "Utalii",
+    "Import/Export",
+    "Dealership",
+    "Postal",
+    "Professional",
+    "Burudani",
+]
+
+LICENSE_CATALOG = [
+    # 1. Maduka na biashara za kawaida
+    {"id": "retail_city", "name": "Retail Shop (City/Municipal)", "price": 70000, "category": "Maduka"},
+    {"id": "retail_district", "name": "Retail Shop (District)", "price": 50000, "category": "Maduka"},
+    {"id": "retail_minor", "name": "Retail Shop (Minor Settlement)", "price": 20000, "category": "Maduka"},
+    {"id": "retail_village", "name": "Retail Shop (Village)", "price": 8000, "category": "Maduka"},
+    {"id": "supermarket_city", "name": "Supermarket (City/Municipal)", "price": 500000, "category": "Maduka"},
+    {"id": "supermarket_district", "name": "Supermarket (District)", "price": 200000, "category": "Maduka"},
+    {"id": "supermarket_minor", "name": "Supermarket (Minor Settlement)", "price": 100000, "category": "Maduka"},
+    {"id": "supermarket_village", "name": "Supermarket (Village)", "price": 5000, "category": "Maduka"},
+    {"id": "departmental_city", "name": "Departmental Store (City/Municipal)", "price": 400000, "category": "Maduka"},
+    {"id": "wholesale", "name": "General Wholesale", "price": 300000, "category": "Maduka"},
+    {"id": "sub_wholesale", "name": "General Sub-wholesale", "price": 200000, "category": "Maduka"},
+    {"id": "kiosk_city", "name": "Kiosk/Grocery (City/Municipal)", "price": 60000, "category": "Maduka"},
+    {"id": "kiosk_district", "name": "Kiosk/Grocery (District)", "price": 40000, "category": "Maduka"},
+    {"id": "kiosk_village", "name": "Kiosk/Grocery (Minor Settlement/Village)", "price": 10000, "category": "Maduka"},
+
+    # 2. Hardware na vifaa
+    {"id": "hardware_city", "name": "Hardware & Building Materials Retail (City/Municipal)", "price": 200000, "category": "Hardware"},
+    {"id": "hardware_district", "name": "Hardware & Building Materials Retail (District)", "price": 150000, "category": "Hardware"},
+    {"id": "hardware_village", "name": "Hardware & Building Materials Retail (Minor Settlement/Village)", "price": 60000, "category": "Hardware"},
+    {"id": "appliances_city", "name": "Domestic Appliances Retail (City/Municipal)", "price": 200000, "category": "Hardware"},
+    {"id": "appliances_district", "name": "Domestic Appliances Retail (District)", "price": 100000, "category": "Hardware"},
+    {"id": "appliances_village", "name": "Domestic Appliances Retail (Minor Settlement/Village)", "price": 50000, "category": "Hardware"},
+    {"id": "electrical_city", "name": "Electrical & Household Items Retail (City/Municipal)", "price": 150000, "category": "Hardware"},
+    {"id": "electrical_district", "name": "Electrical & Household Items Retail (District)", "price": 100000, "category": "Hardware"},
+    {"id": "electrical_minor", "name": "Electrical & Household Items Retail (Minor Settlement)", "price": 50000, "category": "Hardware"},
+    {"id": "electrical_village", "name": "Electrical & Household Items Retail (Village)", "price": 10000, "category": "Hardware"},
+    {"id": "machinery_city", "name": "Machinery Tools (City/Municipal)", "price": 300000, "category": "Hardware"},
+    {"id": "machinery_district", "name": "Machinery Tools (District)", "price": 200000, "category": "Hardware"},
+    {"id": "machinery_village", "name": "Machinery Tools (Minor Settlement/Village)", "price": 80000, "category": "Hardware"},
+    {"id": "timber_city", "name": "Timber & Furniture Retail (City/Municipal)", "price": 200000, "category": "Hardware"},
+    {"id": "timber_district", "name": "Timber & Furniture Retail (District/Town)", "price": 100000, "category": "Hardware"},
+
+    # 3. Mobile money / Electronic Money Transfer
+    {"id": "emt_uwakala", "name": "Electronic Money Transfer (Uwakala)", "price": 80000, "category": "Mobile Money"},
+    {"id": "isp_agent_mm", "name": "Internet Services Provider Agent", "price": 400000, "category": "Mobile Money"},
+    {"id": "internet_cafe_mm", "name": "Internet Surfing/Café", "price": 200000, "category": "Mobile Money"},
+    {"id": "telecom_svc_mm", "name": "Telecommunication Services", "price": 300000, "category": "Mobile Money"},
+    {"id": "telecom_acc_mm", "name": "Selling Telecommunication Accessories", "price": 300000, "category": "Mobile Money"},
+    {"id": "payphone_mm", "name": "Payphone Operator", "price": 400000, "category": "Mobile Money"},
+
+    # 4. Hotel, Lodge na Catering
+    {"id": "hotel_liquor", "name": "Non-Tourist Business Hotel (With Liquor Licence)", "price": 100000, "category": "Hotel", "note": "+ TSh 1,500 kwa kila bedroom"},
+    {"id": "hotel_no_liquor", "name": "Non-Tourist Business Hotel (Without Liquor Licence)", "price": 80000, "category": "Hotel", "note": "+ TSh 2,000 kwa kila bedroom"},
+    {"id": "lodging", "name": "Lodging House", "price": 100000, "category": "Hotel", "note": "+ TSh 2,000 kwa kila bedroom"},
+    {"id": "takeaway", "name": "Take-away", "price": 100000, "category": "Hotel"},
+    {"id": "mobile_catering", "name": "Mobile Catering", "price": 100000, "category": "Hotel"},
+    {"id": "tourist_hotel", "name": "Tourist Hotel", "price": 150000, "category": "Hotel", "note": "+ TSh 2,000 kwa kila bedroom"},
+    {"id": "tourist_lodge", "name": "Tourist Lodge", "price": 150000, "category": "Hotel"},
+    {"id": "tourist_camp", "name": "Tourist Camp", "price": 100000, "category": "Hotel", "note": "+ TSh 3,000 kwa kila hut/cottage"},
+    {"id": "catering", "name": "Catering Services", "price": 200000, "category": "Hotel"},
+
+    # 5. Salon na huduma za mwili
+    {"id": "salon_city", "name": "Hair Salon/Barber Shop (City/Municipal)", "price": 40000, "category": "Salon"},
+    {"id": "salon_district", "name": "Hair Salon/Barber Shop (District)", "price": 20000, "category": "Salon"},
+    {"id": "salon_village", "name": "Hair Salon/Barber Shop (Minor Settlement/Village)", "price": 5000, "category": "Salon"},
+    {"id": "beauty_city", "name": "Beauty Clinic Machinery/Tools (City/Municipal)", "price": 40000, "category": "Salon"},
+    {"id": "beauty_district", "name": "Beauty Clinic Machinery/Tools (District)", "price": 30000, "category": "Salon"},
+    {"id": "beauty_village", "name": "Beauty Clinic Machinery/Tools (Minor Settlement/Village)", "price": 10000, "category": "Salon"},
+
+    # 6. Food na kilimo
+    {"id": "bakery_city", "name": "Bakery (City/Municipal)", "price": 100000, "category": "Food"},
+    {"id": "bakery_district", "name": "Bakery (District)", "price": 80000, "category": "Food"},
+    {"id": "bakery_village", "name": "Bakery (Minor Settlement/Village)", "price": 30000, "category": "Food"},
+    {"id": "milling_city", "name": "Flour/Oil Milling (City/Municipal)", "price": 50000, "category": "Food"},
+    {"id": "milling_district", "name": "Flour/Oil Milling (District/Town)", "price": 30000, "category": "Food"},
+    {"id": "milling_village", "name": "Flour/Oil Milling (Minor Settlement/Village)", "price": 20000, "category": "Food"},
+    {"id": "butchery_city", "name": "Butchery (City/Municipal)", "price": 80000, "category": "Food"},
+    {"id": "butchery_district", "name": "Butchery (District/Town)", "price": 60000, "category": "Food"},
+    {"id": "butchery_village", "name": "Butchery (Minor Settlement/Village)", "price": 10000, "category": "Food"},
+    {"id": "tearoom_city", "name": "Tea Room (City/Municipal)", "price": 50000, "category": "Food"},
+    {"id": "tearoom_district", "name": "Tea Room (District)", "price": 25000, "category": "Food"},
+    {"id": "tearoom_village", "name": "Tea Room (Minor Settlement/Village)", "price": 5000, "category": "Food"},
+    {"id": "fish_city", "name": "Selling Fish (City/Municipal)", "price": 40000, "category": "Food"},
+    {"id": "fish_district", "name": "Selling Fish (District)", "price": 30000, "category": "Food"},
+    {"id": "fish_village", "name": "Selling Fish (Minor Settlement/Village)", "price": 10000, "category": "Food"},
+
+    # 7. Mitumba, vitabu na printing
+    {"id": "mitumba", "name": "Second-hand Clothes & Shoes/Mitumba", "price": 50000, "category": "Mitumba na Vitabu", "note": "Ada hutegemea category"},
+    {"id": "bookstore_city", "name": "Bookstore & Stationery Retail (City/Municipal)", "price": 100000, "category": "Mitumba na Vitabu"},
+    {"id": "bookstore_district", "name": "Bookstore & Stationery Retail (District/Town)", "price": 80000, "category": "Mitumba na Vitabu"},
+    {"id": "bookstore_village", "name": "Bookstore & Stationery Retail (Minor Settlement/Village)", "price": 20000, "category": "Mitumba na Vitabu"},
+    {"id": "printing_city", "name": "Printing & Publishing (City/Municipal)", "price": 400000, "category": "Mitumba na Vitabu"},
+    {"id": "printing_district", "name": "Printing & Publishing (District)", "price": 250000, "category": "Mitumba na Vitabu"},
+    {"id": "printing_village", "name": "Printing & Publishing (Minor Settlement/Village)", "price": 100000, "category": "Mitumba na Vitabu"},
+
+    # 8. Magari, garage na mafuta
+    {"id": "garage_city", "name": "Workshop & Garage (City/Municipal)", "price": 150000, "category": "Magari"},
+    {"id": "garage_district", "name": "Workshop & Garage (District)", "price": 120000, "category": "Magari"},
+    {"id": "garage_minor", "name": "Workshop & Garage (Minor Settlement)", "price": 100000, "category": "Magari"},
+    {"id": "garage_village", "name": "Workshop & Garage (Village)", "price": 30000, "category": "Magari"},
+    {"id": "oils_city", "name": "Motor Oils & Lubricants (City/Municipal)", "price": 120000, "category": "Magari"},
+    {"id": "oils_district", "name": "Motor Oils & Lubricants (District)", "price": 100000, "category": "Magari"},
+    {"id": "petrol_city", "name": "Petrol/Filling Station (City/Municipal)", "price": 200000, "category": "Magari"},
+    {"id": "petrol_district", "name": "Petrol/Filling Station (District)", "price": 150000, "category": "Magari"},
+    {"id": "petrol_village", "name": "Petrol/Filling Station (Minor Settlement/Village)", "price": 100000, "category": "Magari"},
+
+    # 9. Wanyama na mifugo
+    {"id": "livestock_city", "name": "Livestock Trading (City/Municipal)", "price": 150000, "category": "Mifugo"},
+    {"id": "livestock_district", "name": "Livestock Trading (District/Town)", "price": 80000, "category": "Mifugo"},
+    {"id": "livestock_village", "name": "Livestock Trading (Minor Settlement/Village)", "price": 25000, "category": "Mifugo"},
+
+    # 10. Afya na dawa
+    {"id": "dispensary", "name": "Dispensary/Health Centre/Laboratory Clinic", "price": 80000, "category": "Afya"},
+    {"id": "hospital", "name": "Hospital (Local)", "price": 150000, "category": "Afya"},
+    {"id": "poison_1", "name": "Selling Medicines – Part I Poison Shop", "price": 200000, "category": "Afya"},
+    {"id": "poison_2", "name": "Selling Medicines – Part II Poison Shop", "price": 100000, "category": "Afya"},
+
+    # 11. Ujenzi na contractors
+    {"id": "builder_1", "name": "Building Contractor Class I", "price": 1000000, "category": "Ujenzi"},
+    {"id": "builder_2", "name": "Building Contractor Class II", "price": 800000, "category": "Ujenzi"},
+    {"id": "builder_3", "name": "Building Contractor Class III", "price": 700000, "category": "Ujenzi"},
+    {"id": "builder_4", "name": "Building Contractor Class IV", "price": 650000, "category": "Ujenzi"},
+    {"id": "builder_5", "name": "Building Contractor Class V", "price": 500000, "category": "Ujenzi"},
+    {"id": "builder_6", "name": "Building Contractor Class VI", "price": 400000, "category": "Ujenzi"},
+    {"id": "builder_8", "name": "Building Contractor Class VIII", "price": 300000, "category": "Ujenzi"},
+    {"id": "elec_a", "name": "Electrical Contractor Class A", "price": 500000, "category": "Ujenzi"},
+    {"id": "elec_b", "name": "Electrical Contractor Class B", "price": 300000, "category": "Ujenzi"},
+    {"id": "elec_c", "name": "Electrical Contractor Class C", "price": 200000, "category": "Ujenzi"},
+    {"id": "elec_d", "name": "Electrical Contractor Class D", "price": 100000, "category": "Ujenzi"},
+
+    # 12. Agency na brokerage
+    {"id": "commission_agent", "name": "Commission Agent", "price": 300000, "category": "Agency"},
+    {"id": "travel_agent", "name": "Travel Agent", "price": 200000, "category": "Agency"},
+    {"id": "air_charter", "name": "Air Charter Agent (Local)", "price": 300000, "category": "Agency"},
+    {"id": "shipping_agent", "name": "Shipping Agent", "price": 1000000, "category": "Agency"},
+    {"id": "other_agent", "name": "Any Other Agent (Local)", "price": 200000, "category": "Agency"},
+    {"id": "insurance_broker", "name": "Insurance Broker (Local)", "price": 200000, "category": "Agency"},
+    {"id": "stock_broker", "name": "Stock Exchange Broker (Local)", "price": 500000, "category": "Agency"},
+
+    # 13. Banking na financial services
+    {"id": "banking", "name": "Banking Service (Local)", "price": 1000000, "category": "Fedha"},
+    {"id": "bureau", "name": "Bureau de Change (Local)", "price": 600000, "category": "Fedha"},
+    {"id": "coop_bank", "name": "Co-operative Bank", "price": 200000, "category": "Fedha"},
+    {"id": "capital_markets", "name": "Capital Markets & Stock Exchange", "price": 500000, "category": "Fedha"},
+    {"id": "social_security", "name": "Social Security Provider", "price": 1000000, "category": "Fedha"},
+    {"id": "mortgage", "name": "Mortgage & Hire Purchase", "price": 600000, "category": "Fedha"},
+    {"id": "mortgage_micro", "name": "Mortgage & Hire Purchase – Micro Enterprise", "price": 100000, "category": "Fedha"},
+    {"id": "credit_card", "name": "Credit Card Management", "price": 400000, "category": "Fedha"},
+    {"id": "micro_finance", "name": "Micro Financing Investment (Local)", "price": 600000, "category": "Fedha"},
+
+    # 14. Usafirishaji, clearing na shipping
+    {"id": "clearing", "name": "Clearing & Forwarding", "price": 400000, "category": "Usafirishaji"},
+    {"id": "freight", "name": "Freight Forwarding (Local)", "price": 300000, "category": "Usafirishaji"},
+    {"id": "preshipment", "name": "Pre-shipment Inspection (Local)", "price": 300000, "category": "Usafirishaji"},
+    {"id": "cargo_valuation", "name": "Cargo Valuation/Cargo Survey (Local)", "price": 400000, "category": "Usafirishaji"},
+    {"id": "cargo_sourcing", "name": "Cargo Sourcing", "price": 300000, "category": "Usafirishaji"},
+    {"id": "cargo_super", "name": "Cargo Superintendence", "price": 400000, "category": "Usafirishaji"},
+    {"id": "cargo_handling", "name": "Cargo Handling", "price": 1000000, "category": "Usafirishaji"},
+    {"id": "harbour", "name": "Harbour/Airport Management", "price": 1000000, "category": "Usafirishaji"},
+    {"id": "ship_chandel", "name": "Ship Chandelling", "price": 200000, "category": "Usafirishaji"},
+    {"id": "maritime", "name": "Maritime Transportation", "price": 600000, "category": "Usafirishaji"},
+    {"id": "ship_charter", "name": "Ship Charter", "price": 800000, "category": "Usafirishaji"},
+
+    # 15. Insurance na real estate
+    {"id": "gen_insurance", "name": "General Insurance/Assurance (Local)", "price": 1000000, "category": "Bima na Real Estate"},
+    {"id": "underwriting", "name": "Underwriting & Loss Assessment", "price": 600000, "category": "Bima na Real Estate"},
+    {"id": "reinsurance", "name": "Re-insurance & Endowment", "price": 800000, "category": "Bima na Real Estate"},
+    {"id": "real_estate", "name": "Real Estate (Local)", "price": 600000, "category": "Bima na Real Estate"},
+    {"id": "property_mgmt", "name": "Property Management (Local)", "price": 500000, "category": "Bima na Real Estate"},
+    {"id": "estate_agent", "name": "Estate Agent (Local)", "price": 400000, "category": "Bima na Real Estate"},
+    {"id": "property_dev", "name": "Property Development (Local)", "price": 400000, "category": "Bima na Real Estate"},
+
+    # 16. Telecom, internet na mawasiliano
+    {"id": "isp_local", "name": "Internet Service Provider (Local)", "price": 600000, "category": "Telecom"},
+    {"id": "isp_agent", "name": "Internet Service Provider Agent", "price": 400000, "category": "Telecom"},
+    {"id": "internet_cafe", "name": "Internet Café", "price": 200000, "category": "Telecom"},
+    {"id": "telecom_svc", "name": "Telecommunication Services", "price": 300000, "category": "Telecom"},
+    {"id": "telecom_acc", "name": "Selling Telecommunication Accessories", "price": 300000, "category": "Telecom"},
+    {"id": "cellular_op", "name": "Cellular Telephone Operator (Local)", "price": 600000, "category": "Telecom"},
+    {"id": "payphone", "name": "Payphone Operator", "price": 400000, "category": "Telecom"},
+
+    # 17. Media
+    {"id": "radio_tv", "name": "Radio & Television", "price": 400000, "category": "Media"},
+    {"id": "broadcast_tv", "name": "Broadcasting Television Provider", "price": 400000, "category": "Media"},
+    {"id": "tv_station", "name": "Radio/Television Transmission Station", "price": 300000, "category": "Media"},
+
+    # 18. Manufacturing
+    {"id": "industry_small", "name": "Small-scale Industry", "price": 100000, "category": "Viwanda"},
+    {"id": "industry_med", "name": "Medium-scale Industry", "price": 400000, "category": "Viwanda"},
+    {"id": "industry_large", "name": "Large-scale Industry", "price": 600000, "category": "Viwanda"},
+
+    # 19. Utalii
+    {"id": "tour_hotel_ut", "name": "Tourist Hotel", "price": 150000, "category": "Utalii", "note": "+ TSh 2,000/bedroom"},
+    {"id": "tour_lodge_ut", "name": "Tourist Lodge", "price": 150000, "category": "Utalii"},
+    {"id": "tour_camp_ut", "name": "Tourist Camp", "price": 100000, "category": "Utalii", "note": "+ TSh 3,000/hut/cottage"},
+    {"id": "tour_op_local", "name": "Tourist Operator (Local)", "price": 200000, "category": "Utalii"},
+    {"id": "tour_op_foreign", "name": "Tourist Operator (Foreign)", "price": 2500000, "category": "Utalii", "note": "USD 1,000"},
+
+    # 20. Import/Export
+    {"id": "exp_cattle", "name": "Export – Cattle", "price": 300000, "category": "Import/Export"},
+    {"id": "exp_livestock", "name": "Export – Other Livestock", "price": 250000, "category": "Import/Export"},
+    {"id": "exp_raw", "name": "Export – Raw Materials", "price": 300000, "category": "Import/Export"},
+    {"id": "exp_agri", "name": "Export – Agricultural Goods", "price": 100000, "category": "Import/Export"},
+    {"id": "exp_finished", "name": "Export – Finished Goods/Other Commodities", "price": 100000, "category": "Import/Export"},
+    {"id": "exp_transit", "name": "Export – Transit Trade", "price": 300000, "category": "Import/Export"},
+    {"id": "import_merch", "name": "Importation of Merchandise", "price": 400000, "category": "Import/Export"},
+
+    # 21. Dealership/franchise
+    {"id": "mv_dealer", "name": "Motor Vehicle Dealer", "price": 400000, "category": "Dealership"},
+    {"id": "mv_assembly", "name": "Motor Vehicle Assembly", "price": 500000, "category": "Dealership"},
+    {"id": "broadcast_dealer", "name": "Broadcasting Apparatus Dealer", "price": 400000, "category": "Dealership"},
+    {"id": "arms_dealer", "name": "Arms & Ammunition Dealer", "price": 1000000, "category": "Dealership"},
+    {"id": "explosives", "name": "Mining Explosives Dealer (Local)", "price": 1000000, "category": "Dealership"},
+
+    # 22. Printing, postal na courier
+    {"id": "postal_hq", "name": "Postal Services – Headquarters", "price": 300000, "category": "Postal"},
+    {"id": "postal_muni", "name": "Postal Services – Municipal", "price": 200000, "category": "Postal"},
+    {"id": "postal_town", "name": "Postal Services – Town/District", "price": 100000, "category": "Postal"},
+    {"id": "courier", "name": "Courier/Mailing Agent (Local)", "price": 400000, "category": "Postal"},
+    {"id": "ems", "name": "Expedited Mail Service (Local)", "price": 400000, "category": "Postal"},
+
+    # 23. Professions
+    {"id": "biz_consult", "name": "Business Consultancy (Local)", "price": 200000, "category": "Professional"},
+    {"id": "lawyer", "name": "Lawyer (Local)", "price": 300000, "category": "Professional"},
+    {"id": "tax_prac", "name": "Tax Practitioner (Local)", "price": 300000, "category": "Professional"},
+    {"id": "qty_surveyor", "name": "Quantity Surveyor (Local)", "price": 300000, "category": "Professional"},
+    {"id": "engineer", "name": "Engineer (Local)", "price": 300000, "category": "Professional"},
+    {"id": "auditor", "name": "Auditor/Accountant (Local)", "price": 300000, "category": "Professional"},
+    {"id": "medical_prac", "name": "Medical Practitioner (Local)", "price": 150000, "category": "Professional"},
+    {"id": "other_consult", "name": "Other Consultancy (Local)", "price": 200000, "category": "Professional"},
+
+    # 24. Entertainment na gambling
+    {"id": "entertainment_hall", "name": "Entertainment Hall", "price": 300000, "category": "Burudani"},
+    {"id": "slot_machine", "name": "Slot Machine (Local, per station)", "price": 300000, "category": "Burudani"},
+    {"id": "nightclub", "name": "Night Club", "price": 500000, "category": "Burudani"},
+    {"id": "casino_dar", "name": "Casino (Dar es Salaam)", "price": 100000000, "category": "Burudani", "note": "USD 40,000"},
+    {"id": "casino_other", "name": "Casino (Other Towns)", "price": 37500000, "category": "Burudani", "note": "USD 15,000"},
+]
+
+LICENSE_BY_ID = {x["id"]: x for x in LICENSE_CATALOG}
+LICENSE_SERVICE_FEE = 10000  # ada ya mtoa huduma kwa ombi la leseni
+
+# Bei za huduma mpya za Nakala (inclusive)
+NAKALA_PRICE_BIRTH_CERT = 30000
+NAKALA_PRICE_DEATH_CERT = 18000
+NAKALA_PRICE_CERT_VERIFY = 9000
+NAKALA_PRICE_BUSINESS_NAME = 45000
+
+
+def save_nakala_upload(file_storage, prefix="doc"):
+    """Save under nakala/ — Supabase Storage au local. Return relative path."""
+    if not file_storage or not file_storage.filename:
+        return ""
+    allowed = {"png", "jpg", "jpeg", "gif", "webp", "pdf", "bmp"}
+    ext = file_storage.filename.rsplit(".", 1)[-1].lower() if "." in file_storage.filename else ""
+    if ext not in allowed:
+        return ""
+    filename = secure_filename(f"{prefix}_{secrets.token_hex(6)}.{ext}")
+    return storage_upload(file_storage, f"nakala/{filename}")
+
+
+def nakala_service_label(service_type, extra=None):
+    """Jina la huduma kwa UI / admin."""
+    labels = {
+        "tin": "TIN Number",
+        "license": "Leseni ya Biashara",
+        "birth_cert": "Cheti cha Kuzaliwa",
+        "death_cert": "Cheti cha Kifo",
+        "cert_verify": "Uhakiki wa Cheti",
+        "business_name": "Usajili wa Jina la Biashara",
+    }
+    base = labels.get(service_type, service_type or "—")
+    if service_type == "cert_verify" and isinstance(extra, dict):
+        sub = extra.get("verify_type") or ""
+        if sub == "birth":
+            return "Uhakiki — Cheti cha Kuzaliwa"
+        if sub == "death":
+            return "Uhakiki — Cheti cha Kifo"
+    return base
+
+
+
+@app.route("/nakala/license", methods=["GET", "POST"])
+@login_required
+def nakala_license():
+    if request.method == "POST":
+        license_type = request.form.get("license_type", "").strip()
+        full_name = request.form.get("full_name", "").strip()
+        mother_name = request.form.get("mother_name", "").strip()
+        nida_number = request.form.get("nida_number", "").strip()
+        phone1 = request.form.get("phone1", "").strip()
+        phone2 = request.form.get("phone2", "").strip()
+        primary_school = request.form.get("primary_school", "").strip()
+        year_completed = request.form.get("year_completed", "").strip()
+        school_district = request.form.get("school_district", "").strip()
+        school_region = request.form.get("school_region", "").strip()
+        nida_reg_district = request.form.get("nida_reg_district", "").strip()
+        nida_reg_region = request.form.get("nida_reg_region", "").strip()
+        nida_reg_street = request.form.get("nida_reg_street", "").strip()
+        # Eneo la leseni: select za Mkoa → Wilaya → Kata → Mtaa
+        loc_mkoa = request.form.get("license_mkoa", "").strip()
+        loc_wilaya = request.form.get("license_wilaya", "").strip()
+        loc_kata = request.form.get("license_kata", "").strip()
+        loc_mtaa = request.form.get("license_mtaa", "").strip()
+        license_location = request.form.get("license_location", "").strip()
+        if loc_mkoa and loc_wilaya and loc_kata and loc_mtaa:
+            license_location = f"{loc_mtaa}, {loc_kata}, {loc_wilaya}, {loc_mkoa}"
+        elif not license_location:
+            license_location = ", ".join(x for x in [loc_mtaa, loc_kata, loc_wilaya, loc_mkoa] if x)
+
+        lic = LICENSE_BY_ID.get(license_type)
+        if not lic:
+            flash("Chagua aina ya leseni kutoka kwenye orodha.", "error")
+            return redirect(url_for("nakala_license"))
+
+        if not all([full_name, mother_name, nida_number, phone1, primary_school,
+                    year_completed, school_district, school_region,
+                    nida_reg_district, nida_reg_region, nida_reg_street]):
+            flash("Jaza taarifa zote muhimu.", "error")
+            return redirect(url_for("nakala_license"))
+
+        if not all([loc_mkoa, loc_wilaya, loc_kata, loc_mtaa]) and not license_location:
+            flash("Chagua eneo la leseni: Mkoa, Wilaya, Kata na Mtaa.", "error")
+            return redirect(url_for("nakala_license"))
+
+        if len(nida_number) > 20 or not nida_number.isdigit():
+            flash("Namba ya NIDA/NIN lazima iwe namba tu (max 20).", "error")
+            return redirect(url_for("nakala_license"))
+
+        # Bei ya control number = bei rasmi ya leseni; malipo kwenye app = ada ya huduma 10,000
+        keep_session_alive()
+        session["nakala_draft"] = {
+            "service_type": "license",
+            "license_type": lic["name"],
+            "license_id": lic["id"],
+            "license_location": license_location,
+            "control_number_fee": int(lic["price"]),
+            "service_fee": LICENSE_SERVICE_FEE,
+            "full_name": full_name,
+            "mother_name": mother_name,
+            "nida_number": nida_number,
+            "phone1": phone1,
+            "phone2": phone2,
+            "primary_school": primary_school,
+            "year_completed": year_completed,
+            "school_district": school_district,
+            "school_region": school_region,
+            "nida_reg_district": nida_reg_district,
+            "nida_reg_region": nida_reg_region,
+            "nida_reg_street": nida_reg_street,
+            "price": LICENSE_SERVICE_FEE,
+        }
+        return redirect(url_for("nakala_review"))
+
+    return render_template(
+        "nakala_license.html",
+        licenses=LICENSE_CATALOG,
+        categories=LICENSE_CATEGORIES,
+        service_fee=LICENSE_SERVICE_FEE,
+    )
+
+
+
+# ---------------------------------------------------------------------------
+# Nakala — Cheti (Kuzaliwa / Kifo / Verification) + Usajili wa Jina la Biashara
+# ---------------------------------------------------------------------------
+@app.route("/nakala/cheti")
+@login_required
+def nakala_cheti_menu():
+    return render_template("nakala_cheti_menu.html")
+
+
+@app.route("/nakala/cheti/verification")
+@login_required
+def nakala_cheti_verify_menu():
+    return render_template("nakala_cheti_verify_menu.html")
+
+
+@app.route("/nakala/cheti/kuzaliwa", methods=["GET", "POST"])
+@login_required
+def nakala_birth_cert():
+    if request.method == "POST":
+        # Applicant
+        full_name = request.form.get("full_name", "").strip()
+        gender = request.form.get("gender", "").strip()
+        dob = request.form.get("dob", "").strip()
+        region = request.form.get("region", "").strip()
+        district = request.form.get("district", "").strip()
+        ward = request.form.get("ward", "").strip()
+        street = request.form.get("street", "").strip()
+        occupation = request.form.get("occupation", "").strip()
+        phone = request.form.get("phone", "").strip()
+        # Mother
+        mother_name = request.form.get("mother_name", "").strip()
+        mother_dob = request.form.get("mother_dob", "").strip()
+        mother_region = request.form.get("mother_region", "").strip()
+        mother_district = request.form.get("mother_district", "").strip()
+        mother_ward = request.form.get("mother_ward", "").strip()
+        mother_street = request.form.get("mother_street", "").strip()
+        mother_occupation = request.form.get("mother_occupation", "").strip()
+        mother_phone = request.form.get("mother_phone", "").strip()
+        # Father
+        father_name = request.form.get("father_name", "").strip()
+        father_dob = request.form.get("father_dob", "").strip()
+        father_region = request.form.get("father_region", "").strip()
+        father_phone = request.form.get("father_phone", "").strip()
+        father_occupation = request.form.get("father_occupation", "").strip()
+        # Current location
+        curr_region = request.form.get("curr_region", "").strip()
+        curr_district = request.form.get("curr_district", "").strip()
+        curr_ward = request.form.get("curr_ward", "").strip()
+        curr_street = request.form.get("curr_street", "").strip()
+
+        required = [full_name, gender, dob, phone, mother_name, father_name, curr_region]
+        if not all(required):
+            flash("Jaza taarifa zote muhimu (majina, jinsia, tarehe, simu, wazazi, eneo).", "error")
+            return redirect(url_for("nakala_birth_cert"))
+
+        # Documents — at least 2 of: parent_id, applicant_id, id_front+id_back
+        parent_id = save_nakala_upload(request.files.get("parent_id"), "birth_parent_id")
+        applicant_id = save_nakala_upload(request.files.get("applicant_id"), "birth_applicant_id")
+        id_front = save_nakala_upload(request.files.get("id_front"), "birth_id_front")
+        id_back = save_nakala_upload(request.files.get("id_back"), "birth_id_back")
+        docs_count = sum(1 for x in [parent_id, applicant_id, (id_front and id_back)] if x)
+        if docs_count < 2:
+            flash(
+                "Pakia angalau viambatanisho VIWILI: "
+                "kitambulisho cha mzazi, kitambulisho cha muombaji, "
+                "au picha mbele + nyuma ya kitambulisho.",
+                "error",
+            )
+            return redirect(url_for("nakala_birth_cert"))
+
+        keep_session_alive()
+        session["nakala_draft"] = {
+            "service_type": "birth_cert",
+            "full_name": full_name,
+            "phone1": phone,
+            "phone": phone,
+            "gender": gender,
+            "dob": dob,
+            "region": region,
+            "district": district,
+            "ward": ward,
+            "street": street,
+            "occupation": occupation,
+            "mother_name": mother_name,
+            "mother_dob": mother_dob,
+            "mother_region": mother_region,
+            "mother_district": mother_district,
+            "mother_ward": mother_ward,
+            "mother_street": mother_street,
+            "mother_occupation": mother_occupation,
+            "mother_phone": mother_phone,
+            "father_name": father_name,
+            "father_dob": father_dob,
+            "father_region": father_region,
+            "father_phone": father_phone,
+            "father_occupation": father_occupation,
+            "curr_region": curr_region,
+            "curr_district": curr_district,
+            "curr_ward": curr_ward,
+            "curr_street": curr_street,
+            "docs": {
+                "parent_id": parent_id,
+                "applicant_id": applicant_id,
+                "id_front": id_front,
+                "id_back": id_back,
+            },
+            "price": NAKALA_PRICE_BIRTH_CERT,
+        }
+        return redirect(url_for("nakala_review"))
+
+    return render_template("nakala_birth_cert.html", price=NAKALA_PRICE_BIRTH_CERT)
+
+
+@app.route("/nakala/cheti/kifo", methods=["GET", "POST"])
+@login_required
+def nakala_death_cert():
+    if request.method == "POST":
+        # Deceased
+        deceased_name = request.form.get("deceased_name", "").strip()
+        deceased_dob = request.form.get("deceased_dob", "").strip()
+        death_date = request.form.get("death_date", "").strip()
+        residence = request.form.get("residence", "").strip()
+        death_place_area = request.form.get("death_place_area", "").strip()
+        death_cause = request.form.get("death_cause", "").strip()
+        death_place_type = request.form.get("death_place_type", "").strip()
+        # Parents
+        mother_name = request.form.get("mother_name", "").strip()
+        father_name = request.form.get("father_name", "").strip()
+        # Informant
+        full_name = request.form.get("full_name", "").strip()
+        phone = request.form.get("phone", "").strip()
+        occupation = request.form.get("occupation", "").strip()
+        informant_address = request.form.get("informant_address", "").strip()
+
+        if not all([deceased_name, death_date, full_name, phone]):
+            flash("Jaza majina ya marehemu, tarehe ya kifo, jina lako na simu.", "error")
+            return redirect(url_for("nakala_death_cert"))
+
+        docs = {
+            "burial_permit": save_nakala_upload(request.files.get("burial_permit"), "death_burial"),
+            "family_minutes": save_nakala_upload(request.files.get("family_minutes"), "death_minutes"),
+            "deceased_id": save_nakala_upload(request.files.get("deceased_id"), "death_deceased_id"),
+            "admin_id": save_nakala_upload(request.files.get("admin_id"), "death_admin_id"),
+            "marriage_or_children": save_nakala_upload(
+                request.files.get("marriage_or_children"), "death_marriage"
+            ),
+        }
+
+        keep_session_alive()
+        session["nakala_draft"] = {
+            "service_type": "death_cert",
+            "full_name": full_name,
+            "phone1": phone,
+            "phone": phone,
+            "deceased_name": deceased_name,
+            "deceased_dob": deceased_dob,
+            "death_date": death_date,
+            "residence": residence,
+            "death_place_area": death_place_area,
+            "death_cause": death_cause,
+            "death_place_type": death_place_type,
+            "mother_name": mother_name,
+            "father_name": father_name,
+            "occupation": occupation,
+            "informant_address": informant_address,
+            "docs": docs,
+            "price": NAKALA_PRICE_DEATH_CERT,
+        }
+        return redirect(url_for("nakala_review"))
+
+    return render_template("nakala_death_cert.html", price=NAKALA_PRICE_DEATH_CERT)
+
+
+@app.route("/nakala/cheti/verification/kuzaliwa", methods=["GET", "POST"])
+@login_required
+def nakala_verify_birth():
+    if request.method == "POST":
+        entry_number = request.form.get("entry_number", "").strip()
+        birth_place = request.form.get("birth_place", "").strip()
+        full_name = request.form.get("full_name", "").strip()
+        gender = request.form.get("gender", "").strip()
+        father_name = request.form.get("father_name", "").strip()
+        mother_name = request.form.get("mother_name", "").strip()
+        phone = request.form.get("phone", "").strip()
+
+        if not all([entry_number, full_name, phone]):
+            flash("Jaza entry number, majina kamili na namba ya simu.", "error")
+            return redirect(url_for("nakala_verify_birth"))
+
+        keep_session_alive()
+        session["nakala_draft"] = {
+            "service_type": "cert_verify",
+            "verify_type": "birth",
+            "full_name": full_name,
+            "phone1": phone,
+            "phone": phone,
+            "entry_number": entry_number,
+            "birth_place": birth_place,
+            "gender": gender,
+            "father_name": father_name,
+            "mother_name": mother_name,
+            "price": NAKALA_PRICE_CERT_VERIFY,
+        }
+        return redirect(url_for("nakala_review"))
+
+    return render_template(
+        "nakala_verify_birth.html",
+        price=NAKALA_PRICE_CERT_VERIFY,
+    )
+
+
+@app.route("/nakala/cheti/verification/kifo", methods=["GET", "POST"])
+@login_required
+def nakala_verify_death():
+    if request.method == "POST":
+        entry_number = request.form.get("entry_number", "").strip()
+        full_name = request.form.get("full_name", "").strip()
+        gender = request.form.get("gender", "").strip()
+        father_name = request.form.get("father_name", "").strip()
+        mother_name = request.form.get("mother_name", "").strip()
+        phone = request.form.get("phone", "").strip()
+
+        if not all([entry_number, full_name, phone]):
+            flash("Jaza entry number, majina kamili na namba ya simu.", "error")
+            return redirect(url_for("nakala_verify_death"))
+
+        keep_session_alive()
+        session["nakala_draft"] = {
+            "service_type": "cert_verify",
+            "verify_type": "death",
+            "full_name": full_name,
+            "phone1": phone,
+            "phone": phone,
+            "entry_number": entry_number,
+            "gender": gender,
+            "father_name": father_name,
+            "mother_name": mother_name,
+            "price": NAKALA_PRICE_CERT_VERIFY,
+        }
+        return redirect(url_for("nakala_review"))
+
+    return render_template(
+        "nakala_verify_death.html",
+        price=NAKALA_PRICE_CERT_VERIFY,
+    )
+
+
+@app.route("/nakala/business-name", methods=["GET", "POST"])
+@login_required
+def nakala_business_name():
+    if request.method == "POST":
+        nida_number = request.form.get("nida_number", "").strip()
+        business_name = request.form.get("business_name", "").strip()
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+        full_name = request.form.get("full_name", "").strip()
+
+        if not all([nida_number, business_name, phone, full_name]):
+            flash("Jaza NIDA, jina la biashara, simu na majina yako matatu.", "error")
+            return redirect(url_for("nakala_business_name"))
+
+        keep_session_alive()
+        session["nakala_draft"] = {
+            "service_type": "business_name",
+            "full_name": full_name,
+            "phone1": phone,
+            "phone": phone,
+            "nida_number": nida_number,
+            "business_name": business_name,
+            "email": email,
+            "price": NAKALA_PRICE_BUSINESS_NAME,
+        }
+        return redirect(url_for("nakala_review"))
+
+    return render_template(
+        "nakala_business_name.html",
+        price=NAKALA_PRICE_BUSINESS_NAME,
+    )
+
+
+@app.route("/nakala/review")
+@login_required
+def nakala_review():
+    draft = session.get("nakala_draft")
+    if not draft:
+        flash("Hakuna taarifa za kukaguliwa. Anza upya.", "error")
+        return redirect(url_for("nakala"))
+    return render_template(
+        "nakala_review.html",
+        draft=draft,
+        service_label=nakala_service_label(draft.get("service_type"), draft),
+    )
+
+
+@app.route("/nakala/pay", methods=["POST"])
+@login_required
+def nakala_pay():
+    user = get_current_user()
+    draft = session.get("nakala_draft")
+    if not draft:
+        flash("Hakuna taarifa. Anza upya.", "error")
+        return redirect(url_for("nakala"))
+
+    payment_phone = request.form.get("payment_phone", "").strip()
+    if not payment_phone:
+        flash("Weka namba ya simu yenye pesa.", "error")
+        return redirect(url_for("nakala_review"))
+
+    code = generate_nakala_code()
+    while NakalaRequest.query.filter_by(request_code=code).first():
+        code = generate_nakala_code()
+
+    license_name = (draft.get("license_type") or "")[:200]
+    try:
+        price_val = int(draft.get("price") or 0)
+    except (TypeError, ValueError):
+        price_val = 0
+    try:
+        control_fee = int(draft.get("control_number_fee") or 0)
+    except (TypeError, ValueError):
+        control_fee = 0
+    try:
+        svc_fee = int(draft.get("service_fee") or (LICENSE_SERVICE_FEE if draft.get("service_type") == "license" else 0))
+    except (TypeError, ValueError):
+        svc_fee = LICENSE_SERVICE_FEE if draft.get("service_type") == "license" else 0
+    # Leseni: malipo ya app ni ada ya huduma 10,000
+    if draft.get("service_type") == "license":
+        price_val = LICENSE_SERVICE_FEE
+        svc_fee = LICENSE_SERVICE_FEE
+
+    # extra_data: store full form payload for new services (exclude large binary)
+    extra_payload = draft.get("extra_data")
+    if extra_payload is None and draft.get("service_type") in (
+        "birth_cert", "death_cert", "cert_verify", "business_name"
+    ):
+        # keep a copy of draft fields for admin display
+        skip_keys = {"price", "service_fee", "control_number_fee"}
+        extra_payload = {k: v for k, v in draft.items() if k not in skip_keys and not str(k).startswith("_")}
+    extra_json = ""
+    if extra_payload:
+        try:
+            extra_json = json.dumps(extra_payload, ensure_ascii=False)
+        except Exception:
+            extra_json = ""
+
+    req = NakalaRequest(
+        request_code=code,
+        user_id=user.id,
+        service_type=draft["service_type"],
+        full_name=(draft.get("full_name") or "")[:150] or "—",
+        mother_name=draft.get("mother_name", ""),
+        nida_number=draft.get("nida_number", ""),
+        phone1=(draft.get("phone1") or draft.get("phone") or "")[:20] or "—",
+        phone2=draft.get("phone2", ""),
+        primary_school=draft.get("primary_school", ""),
+        year_completed=draft.get("year_completed", ""),
+        school_district=draft.get("school_district", ""),
+        school_region=draft.get("school_region", ""),
+        nida_reg_district=draft.get("nida_reg_district", ""),
+        nida_reg_region=draft.get("nida_reg_region", ""),
+        nida_reg_street=draft.get("nida_reg_street", ""),
+        nida_reg_phone=draft.get("nida_reg_phone", ""),
+        had_tin_before=draft.get("had_tin_before", ""),
+        license_type=license_name,
+        license_location=(draft.get("license_location") or "")[:200],
+        control_number_fee=control_fee,
+        service_fee=svc_fee,
+        price=price_val,
+        status="pending",
+        extra_data=extra_json,
+    )
+    try:
+        db.session.add(req)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Hitilafu ya kuhifadhi ombi: {str(e)[:120]}", "error")
+        return redirect(url_for("nakala_review"))
+
+    session.pop("nakala_draft", None)
+
+    price = req.price
+    if pesapal_enabled() and price > 0:
+        try:
+            pay_ref = f"NKR{req.id}"
+            callback = url_for("pesapal_callback", _external=True)
+            data = submit_pesapal_order(
+                merchant_ref=pay_ref,
+                amount=price,
+                description=f"Nakala {req.request_code} ({req.service_type})",
+                callback_url=callback,
+                phone=payment_phone,
+                email=getattr(user, "email", None) if user else None,
+                first_name=(user.username if user else "Customer")[:40],
+            )
+            req.status = "awaiting_payment"
+            db.session.commit()
+            try:
+                send_push_to_admins(
+                    "Nakala — inasubiri malipo",
+                    f"{req.request_code} ({req.service_type})"
+                    + (f" · {req.license_type}" if req.license_type else ""),
+                    url="/dashboard",
+                    tag=f"nakala-wait-{req.id}",
+                )
+            except Exception as e:
+                print(f"nakala pay push: {e}")
+            flash(
+                "Unaelekezwa kwenye ukurasa wa malipo wa Pesapal. "
+                "Chagua njia ya malipo kisha maliza.",
+                "success",
+            )
+            return redirect(data["redirect_url"])
+        except Exception as e:
+            req.status = "payment_failed"
+            reason = clean_payment_error(str(e), "Hitilafu ya malipo.")
+            req.admin_note = reason
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+            flash(
+                f"Malipo yameshindwa. Sababu: {reason} "
+                f"Fungua ombi na ubonyeze «Lipa Tena». Manual: "
+                f"{PAYMENT_NETWORK} {PAYMENT_NUMBER}.",
+                "error",
+            )
+    else:
+        try:
+            send_push_to_admins(
+                "Ombi jipya la Nakala (manual)",
+                f"{req.request_code} ({req.service_type})",
+                url="/dashboard",
+                tag=f"nakala-new-{req.id}",
+            )
+        except Exception as e:
+            print(f"nakala new push: {e}")
+        flash(
+            f"Ombi limehifadhiwa! Lipa TSh {price:,} kwa {PAYMENT_NETWORK} {PAYMENT_NUMBER} ({PAYMENT_NAME}). "
+            "Baada ya malipo wasiliana na admin.",
+            "success",
+        )
+    return redirect(url_for("my_nakala"))
+
+
+@app.route("/my-nakala")
+@login_required
+def my_nakala():
+    user = get_current_user()
+    requests_list = (
+        NakalaRequest.query.filter_by(user_id=user.id)
+        .order_by(NakalaRequest.created_at.desc())
+        .all()
+    )
+    return render_template("my_nakala.html", requests=requests_list)
+
+
+@app.route("/nakala/<int:req_id>")
+@login_required
+def nakala_detail(req_id):
+    user = get_current_user()
+    req = NakalaRequest.query.get_or_404(req_id)
+    if req.user_id != user.id and not user.is_admin:
+        flash("Huna ruhusa.", "error")
+        return redirect(url_for("my_nakala"))
+    extra = {}
+    if req.extra_data:
+        try:
+            extra = json.loads(req.extra_data) if isinstance(req.extra_data, str) else (req.extra_data or {})
+        except Exception:
+            extra = {}
+    return render_template(
+        "nakala_detail.html",
+        req=req,
+        extra=extra,
+        service_label=nakala_service_label(req.service_type, extra),
+    )
+
+
+@app.route("/nakala/<int:req_id>/repay", methods=["GET", "POST"])
+@login_required
+def nakala_repay(req_id):
+    """Lipa tena baada ya payment_failed / pending bila malipo yaliyothibitishwa."""
+    user = get_current_user()
+    req = NakalaRequest.query.get_or_404(req_id)
+    if req.user_id != user.id:
+        flash("Huna ruhusa.", "error")
+        return redirect(url_for("my_nakala"))
+
+    # Usiruhusu repay kama tayari imelipwa / inachakatwa
+    if req.status in (
+        "paid", "processing", "waiting_control_number",
+        "control_issued", "completed",
+    ):
+        flash("Ombi hili tayari limelipwa au linashughulikiwa.", "error")
+        return redirect(url_for("nakala_detail", req_id=req.id))
+
+    if request.method == "GET":
+        # Fomu rahisi ya namba ya kulipia
+        return f"""<!DOCTYPE html>
+<html lang="sw"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lipa Tena · {req.request_code}</title>
+<script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-slate-50 min-h-screen p-4">
+<div class="max-w-md mx-auto bg-white rounded-2xl shadow p-6 mt-8">
+  <h1 class="text-lg font-bold text-slate-800 mb-1">Lipa Tena</h1>
+  <p class="text-sm text-slate-500 mb-4">{req.request_code} · Ada TSh {req.price:,}</p>
+  <form method="POST">
+    <label class="block text-xs font-bold text-slate-600 mb-1">Namba yenye pesa</label>
+    <input name="payment_phone" type="tel" required placeholder="07XXXXXXXX"
+      value="{user.phone or ''}"
+      class="w-full border border-slate-200 rounded-xl px-3 py-3 mb-4 text-sm">
+    <button type="submit"
+      class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl">
+      Tuma Ombi la Malipo
+    </button>
+  </form>
+  <a href="/nakala/{req.id}" class="block text-center text-sm text-slate-500 mt-4">← Rudi</a>
+</div></body></html>"""
+
+    payment_phone = request.form.get("payment_phone", "").strip()
+    if not payment_phone:
+        flash("Weka namba ya kulipia.", "error")
+        return redirect(url_for("nakala_repay", req_id=req.id))
+
+    price = int(req.price or 0)
+    if not (pesapal_enabled() and price > 0):
+        flash(
+            f"Lipa manual TSh {price:,} kwa {PAYMENT_NETWORK} {PAYMENT_NUMBER} ({PAYMENT_NAME}).",
+            "error",
+        )
+        return redirect(url_for("nakala_detail", req_id=req.id))
+
+    try:
+        # Reference mpya kila jaribio (lazima unique)
+        pay_ref = f"NKR{req.id}T{int(time.time())}"[:40]
+        callback = url_for("pesapal_callback", _external=True)
+        user = get_current_user()
+        data = submit_pesapal_order(
+            merchant_ref=pay_ref,
+            amount=price,
+            description=f"Nakala repay {req.request_code}",
+            callback_url=callback,
+            phone=payment_phone,
+            email=getattr(user, "email", None) if user else None,
+            first_name=(user.username if user else "Customer")[:40],
+        )
+        req.status = "awaiting_payment"
+        req.admin_note = ""
+        db.session.commit()
+        flash(
+            "Unaelekezwa tena kwenye ukurasa wa malipo wa Pesapal. Maliza malipo huko.",
+            "success",
+        )
+        return redirect(data["redirect_url"])
+    except Exception as e:
+        req.status = "payment_failed"
+        reason = clean_payment_error(str(e), "Hitilafu ya malipo.")
+        req.admin_note = reason
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        flash(
+            f"Malipo yameshindwa. Sababu: {reason} "
+            f"Jaribu tena au lipa manual: {PAYMENT_NETWORK} {PAYMENT_NUMBER}.",
+            "error",
+        )
+    return redirect(url_for("nakala_detail", req_id=req.id))
+
+
+@app.route("/dashboard")
+@admin_required
+def dashboard():
+    from sqlalchemy import or_, and_
+
+    users_count = User.query.count()
+    pending_count = Order.query.filter_by(status="pending").count()
+    agency_pending = Application.query.filter_by(status="pending").count()
+    # Pending work — bila malipo yaliyoshindwa (hayo yanaenda trash)
+    nakala_pending = NakalaRequest.query.filter(NakalaRequest.status.in_([
+        "pending", "awaiting_payment", "paid", "processing",
+        "waiting_control_number", "control_issued",
+    ])).count()
+
+    # Search oda kwa ref / id / simu / amount
+    orders_ref_q = (request.args.get("ref") or "").strip()
+    orders_q = Order.query.filter(Order.status != "failed")
+    if orders_ref_q:
+        like = f"%{orders_ref_q}%"
+        filters = [
+            Order.order_reference.ilike(like),
+            Order.phone.ilike(like),
+            Order.amount.ilike(like),
+            Order.note.ilike(like),
+        ]
+        if orders_ref_q.isdigit():
+            filters.append(Order.id == int(orders_ref_q))
+        orders_q = orders_q.filter(or_(*filters))
+    orders = orders_q.order_by(Order.created_at.desc()).limit(50).all()
+
+    # Trash: malipo yameshindwa tu
+    trash_orders = (
+        Order.query.filter_by(status="failed")
+        .order_by(Order.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    trash_nakala = (
+        NakalaRequest.query.filter_by(status="payment_failed")
+        .order_by(NakalaRequest.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    trash_orders_count = Order.query.filter_by(status="failed").count()
+    trash_nakala_count = NakalaRequest.query.filter_by(status="payment_failed").count()
+    trash_count = trash_orders_count + trash_nakala_count
+
+    applications = Application.query.order_by(Application.created_at.desc()).limit(50).all()
+    slides = Slide.query.order_by(Slide.sort_order.asc(), Slide.id.asc()).all()
+    nakala_list = (
+        NakalaRequest.query.filter(NakalaRequest.status != "payment_failed")
+        .order_by(NakalaRequest.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    # Active password-reset OTPs (for admin to read to customer via WhatsApp)
+    pending_resets = (
+        User.query.filter(User.reset_otp.isnot(None), User.reset_otp != "")
+        .filter(
+            (User.reset_otp_expires.is_(None))
+            | (User.reset_otp_expires > datetime.utcnow())
+        )
+        .order_by(User.reset_otp_expires.desc())
+        .limit(20)
+        .all()
+    )
+    # Users list + search (admin Users tab)
+    q = (request.args.get("q") or "").strip()
+    users_query = User.query.order_by(User.created_at.desc())
+    if q:
+        like = f"%{q}%"
+        filters = [
+            User.username.ilike(like),
+            User.phone.ilike(like),
+            User.email.ilike(like),
+        ]
+        if q.isdigit():
+            filters.append(User.id == int(q))
+        users_query = users_query.filter(or_(*filters))
+    all_users = users_query.limit(300).all()
+
+    # Chat threads kwa tab ya Ujumbe kwenye dashboard
+    from sqlalchemy import func, desc
+    chat_subq = (
+        db.session.query(
+            Message.user_id,
+            func.max(Message.created_at).label("last_at"),
+            func.count(Message.id).label("msg_count"),
+        )
+        .group_by(Message.user_id)
+        .subquery()
+    )
+    chat_rows = (
+        db.session.query(User, chat_subq.c.last_at, chat_subq.c.msg_count)
+        .join(chat_subq, User.id == chat_subq.c.user_id)
+        .order_by(desc(chat_subq.c.last_at))
+        .limit(50)
+        .all()
+    )
+    chat_threads = []
+    # Hesabu ujumbe wa mteja ambao admin HAJASOMA (is_read=False)
+    chat_unread = (
+        Message.query.filter_by(sender="customer", is_read=False).count()
+    )
+    for u, last_at, msg_count in chat_rows:
+        last_msg = (
+            Message.query.filter_by(user_id=u.id)
+            .order_by(Message.created_at.desc())
+            .first()
+        )
+        last_text = ""
+        last_sender = ""
+        unread = False
+        unread_count = 0
+        if last_msg:
+            last_text = (last_msg.message or ("[Picha]" if last_msg.image else "—"))[:100]
+            last_sender = last_msg.sender or ""
+            unread_count = (
+                Message.query.filter_by(user_id=u.id, sender="customer", is_read=False).count()
+            )
+            unread = unread_count > 0
+        chat_threads.append({
+            "user": u,
+            "last_at": last_at,
+            "msg_count": msg_count,
+            "last_message": last_text,
+            "last_sender": last_sender,
+            "unread_from_customer": unread,
+            "unread_count": unread_count,
+        })
+
+    return render_template(
+        "dashboard.html",
+        users_count=users_count,
+        pending_count=pending_count,
+        agency_pending=agency_pending,
+        nakala_pending=nakala_pending,
+        orders=orders,
+        orders_ref_q=orders_ref_q,
+        applications=applications,
+        slides=slides,
+        nakala_list=nakala_list,
+        pending_resets=pending_resets,
+        all_users=all_users,
+        users_search_q=q,
+        trash_orders=trash_orders,
+        trash_nakala=trash_nakala,
+        trash_orders_count=trash_orders_count,
+        trash_nakala_count=trash_nakala_count,
+        trash_count=trash_count,
+        chat_threads=chat_threads,
+        chat_unread=chat_unread,
+    )
+
+
+
+@app.route("/admin/order/delete/<int:order_id>", methods=["POST"])
+@admin_required
+def admin_order_delete(order_id):
+    """Futa oda iliyoshindwa malipo (trash) — failed tu."""
+    order_item = Order.query.get_or_404(order_id)
+    if order_item.status != "failed":
+        flash("Unaweza kufuta kutoka trash oda zilizo 'Malipo Yameshindwa' tu.", "error")
+        return redirect(url_for("dashboard") + "#trash")
+    oid = order_item.id
+    db.session.delete(order_item)
+    db.session.commit()
+    flash(f"Oda #{oid} imefutwa kabisa kutoka trash.", "success")
+    return redirect(url_for("dashboard") + "#trash")
+
+
+@app.route("/admin/order/trash/empty", methods=["POST"])
+@admin_required
+def admin_order_trash_empty():
+    """Futa oda zote zilizo failed (trash)."""
+    n = Order.query.filter_by(status="failed").delete()
+    db.session.commit()
+    flash(f"Trash ya oda tupu: {n} zimefutwa.", "success")
+    return redirect(url_for("dashboard") + "#trash")
+
+
+@app.route("/admin/nakala/delete/<int:req_id>", methods=["POST"])
+@admin_required
+def admin_nakala_delete(req_id):
+    """Futa ombi la nakala lililoshindwa malipo (payment_failed) — trash."""
+    req = NakalaRequest.query.get_or_404(req_id)
+    if req.status != "payment_failed":
+        flash("Unaweza kufuta kutoka trash maombi yaliyo 'Malipo Yameshindwa' tu.", "error")
+        return redirect(url_for("dashboard") + "#trash")
+    if req.result_file:
+        storage_delete(req.result_file)
+    code = req.request_code
+    db.session.delete(req)
+    db.session.commit()
+    flash(f"Ombi {code} limetolewa kabisa kutoka trash.", "success")
+    return redirect(url_for("dashboard") + "#trash")
+
+
+@app.route("/admin/nakala/trash/empty", methods=["POST"])
+@admin_required
+def admin_nakala_trash_empty():
+    """Futa maombi yote ya nakala yaliyo payment_failed."""
+    rows = NakalaRequest.query.filter_by(status="payment_failed").all()
+    n = 0
+    for req in rows:
+        if req.result_file:
+            storage_delete(req.result_file)
+        db.session.delete(req)
+        n += 1
+    db.session.commit()
+    flash(f"Trash ya nakala tupu: {n} zimefutwa.", "success")
+    return redirect(url_for("dashboard") + "#trash")
+
+
+@app.route("/admin/users/block/<int:user_id>", methods=["POST"])
+@admin_required
+def admin_user_block(user_id):
+    target = User.query.get_or_404(user_id)
+    me = get_current_user()
+    if target.id == me.id:
+        flash("Huwezi kujifunga mwenyewe.", "error")
+        return redirect(url_for("dashboard") + "#users")
+    if target.is_admin:
+        flash("Huwezi kufunga akaunti ya admin.", "error")
+        return redirect(url_for("dashboard") + "#users")
+    target.is_blocked = True
+    db.session.commit()
+    flash(f"User #{target.id} ({target.username}) amefungwa.", "success")
+    return redirect(url_for("dashboard") + "#users")
+
+
+@app.route("/admin/users/unblock/<int:user_id>", methods=["POST"])
+@admin_required
+def admin_user_unblock(user_id):
+    target = User.query.get_or_404(user_id)
+    target.is_blocked = False
+    db.session.commit()
+    flash(f"User #{target.id} ({target.username}) amefunguliwa.", "success")
+    return redirect(url_for("dashboard") + "#users")
+
+
+@app.route("/admin/users/delete/<int:user_id>", methods=["POST"])
+@admin_required
+def admin_user_delete(user_id):
+    target = User.query.get_or_404(user_id)
+    me = get_current_user()
+    if target.id == me.id:
+        flash("Huwezi kujifuta mwenyewe.", "error")
+        return redirect(url_for("dashboard") + "#users")
+    if target.is_admin:
+        flash("Huwezi kufuta akaunti ya admin.", "error")
+        return redirect(url_for("dashboard") + "#users")
+    uname = target.username
+    uid = target.id
+    # Futa data zinazohusiana ili kuepuka FK errors
+    Order.query.filter_by(user_id=uid).delete()
+    Message.query.filter_by(user_id=uid).delete()
+    PushSubscription.query.filter_by(user_id=uid).delete()
+    for app_row in Application.query.filter_by(user_id=uid).all():
+        AgencyMessage.query.filter_by(application_id=app_row.id).delete()
+        db.session.delete(app_row)
+    NakalaRequest.query.filter_by(user_id=uid).delete()
+    db.session.delete(target)
+    db.session.commit()
+    flash(f"Akaunti #{uid} ({uname}) imefutwa kabisa.", "success")
+    return redirect(url_for("dashboard") + "#users")
+
+
+@app.route("/admin/users/<int:user_id>/orders.csv")
+@admin_required
+def admin_user_orders_csv(user_id):
+    target = User.query.get_or_404(user_id)
+    orders_list = (
+        Order.query.filter_by(user_id=target.id)
+        .order_by(Order.created_at.desc())
+        .all()
+    )
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "order_id", "amount", "price", "phone", "status",
+        "order_reference", "note", "fail_reason", "created_at_dar",
+    ])
+    for o in orders_list:
+        writer.writerow([
+            o.id,
+            o.amount or "",
+            o.price or 0,
+            o.phone or "",
+            o.status or "",
+            o.order_reference or "",
+            (o.note or "").replace("\n", " "),
+            (o.fail_reason or "").replace("\n", " "),
+            to_dar_es_salaam(o.created_at),
+        ])
+    out = buf.getvalue()
+    filename = f"orders_user_{target.id}_{target.username}.csv"
+    return Response(
+        out,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+
+
+@app.route("/admin/agency/<int:application_id>", methods=["GET"])
+@admin_required
+def admin_agency_detail(application_id):
+    """Ukurasa kamili wa ombi la Uwakala — taarifa, files, badilisha status."""
+    application = Application.query.get_or_404(application_id)
+    extra = {}
+    if getattr(application, "extra_data", None):
+        try:
+            extra = json.loads(application.extra_data) if isinstance(application.extra_data, str) else (application.extra_data or {})
+        except Exception:
+            extra = {}
+    return render_template(
+        "admin_agency_detail.html",
+        application=application,
+        extra=extra,
+    )
+
+
+@app.route("/admin/agency/status/<int:application_id>", methods=["POST"])
+@admin_required
+def update_agency_status(application_id):
+    application = Application.query.get_or_404(application_id)
+    status = request.form.get("status", "pending")
+    note = request.form.get("note", "").strip()
+    if status not in ("pending", "processing", "completed", "rejected"):
+        flash("Status si sahihi.", "error")
+        return redirect(url_for("dashboard"))
+    application.status = status
+    application.admin_note = note
+    db.session.commit()
+    db.session.add(AgencyMessage(
+        application_id=application.id,
+        sender="system",
+        message=f"Status: {status}" + (f" — {note}" if note else ""),
+    ))
+    db.session.commit()
+    try:
+        status_sw = {
+            "pending": "Inasubiri",
+            "processing": "Inashughulikiwa",
+            "completed": "Imekamilika ✓",
+            "rejected": "Imekataliwa",
+        }.get(status, status)
+        body = f"Ombi {application.application_code}: {status_sw}"
+        if note:
+            body += f" — {note[:60]}"
+        send_push_to_user(
+            application.user_id,
+            "Hali ya Ombi la Uwakala",
+            body,
+            url=f"/application/{application.id}",
+            tag=f"agency-status-{application.id}",
+        )
+    except Exception as e:
+        print(f"agency status push: {e}")
+    flash("Status imehifadhiwa.", "success")
+    return redirect(url_for("admin_agency_detail", application_id=application.id))
+
+
+@app.route("/admin/agency/chat/<int:application_id>", methods=["GET", "POST"])
+@admin_required
+def admin_agency_chat(application_id):
+    application = Application.query.get_or_404(application_id)
+    application.username = application.user.username if application.user else "—"
+    if request.method == "POST":
+        text = request.form.get("message", "").strip()
+        if text:
+            msg = AgencyMessage(
+                application_id=application.id,
+                sender="admin",
+                message=text,
+            )
+            db.session.add(msg)
+            db.session.commit()
+            try:
+                send_push_to_user(
+                    application.user_id,
+                    "Jibu kuhusu Uwakala",
+                    (text or "")[:80],
+                    url=f"/application/{application.id}",
+                    tag=f"agency-admin-chat-{application.id}",
+                )
+            except Exception as e:
+                print(f"agency admin chat push: {e}")
+            flash("Ujumbe umetumwa.", "success")
+        return redirect(url_for("admin_agency_chat", application_id=application.id))
+    messages = (
+        AgencyMessage.query.filter_by(application_id=application.id)
+        .order_by(AgencyMessage.created_at.asc())
+        .all()
+    )
+    return render_template(
+        "admin_agency_chat.html",
+        application=application,
+        messages=messages,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Admin Slideshow
+# ---------------------------------------------------------------------------
+@app.route("/admin/slides/add", methods=["POST"])
+@admin_required
+def admin_slide_add():
+    image_file = request.files.get("image")
+    link = request.form.get("link", "").strip()
+    title = request.form.get("title", "").strip()
+    sort_order_raw = request.form.get("sort_order", "0").strip()
+
+    if not image_file or not image_file.filename:
+        flash("Picha ni lazima. Chagua picha ya banner.", "error")
+        return redirect(url_for("dashboard"))
+
+    if not link:
+        flash("Link ni lazima. Weka URL au path (mfano /order).", "error")
+        return redirect(url_for("dashboard"))
+
+    if not allowed_slide_file(image_file.filename):
+        flash(
+            "Aina ya faili hairuhusiwi. Ruhusu: png, jpg, jpeg, gif, webp, bmp, svg, ico, tiff, heic, avif.",
+            "error",
+        )
+        return redirect(url_for("dashboard"))
+
+    try:
+        sort_order = int(sort_order_raw) if sort_order_raw else 0
+    except ValueError:
+        sort_order = 0
+
+    ext = image_file.filename.rsplit(".", 1)[1].lower()
+    filename = secure_filename(f"slide_{secrets.token_hex(6)}.{ext}")
+    stored = storage_upload(image_file, f"slide/{filename}")
+    if not stored:
+        flash("Imeshindwa kupakia picha. Jaribu tena.", "error")
+        return redirect(url_for("dashboard"))
+
+    slide = Slide(
+        image=filename,
+        link=link,
+        title=title,
+        sort_order=sort_order,
+        is_active=True,
+    )
+    db.session.add(slide)
+    db.session.commit()
+    flash("Tangazo / slide limeongezwa!", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/admin/slides/update/<int:slide_id>", methods=["POST"])
+@admin_required
+def admin_slide_update(slide_id):
+    slide = Slide.query.get_or_404(slide_id)
+    link = request.form.get("link", "").strip()
+    title = request.form.get("title", "").strip()
+    sort_order_raw = request.form.get("sort_order", "0").strip()
+    is_active = request.form.get("is_active") == "1"
+
+    try:
+        sort_order = int(sort_order_raw) if sort_order_raw else 0
+    except ValueError:
+        sort_order = 0
+
+    image_file = request.files.get("image")
+    if image_file and image_file.filename and allowed_slide_file(image_file.filename):
+        # futa ya zamani
+        if slide.image:
+            storage_delete(f"slide/{slide.image}")
+        ext = image_file.filename.rsplit(".", 1)[1].lower()
+        filename = secure_filename(f"slide_{secrets.token_hex(6)}.{ext}")
+        stored = storage_upload(image_file, f"slide/{filename}")
+        if stored:
+            slide.image = filename
+
+    slide.link = link
+    slide.title = title
+    slide.sort_order = sort_order
+    slide.is_active = is_active
+    db.session.commit()
+    flash("Mabadiliko yamehifadhiwa.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/admin/slides/delete/<int:slide_id>", methods=["POST"])
+@admin_required
+def admin_slide_delete(slide_id):
+    slide = Slide.query.get_or_404(slide_id)
+    if slide.image:
+        storage_delete(f"slide/{slide.image}")
+    db.session.delete(slide)
+    db.session.commit()
+    flash("Slide imefutwa.", "success")
+    return redirect(url_for("dashboard"))
+
+
+
+@app.route("/admin/nakala/<int:req_id>", methods=["GET"])
+@admin_required
+def admin_nakala_detail(req_id):
+    """Ukurasa kamili wa ombi la Nakala — taarifa, documents, badilisha status."""
+    req = NakalaRequest.query.get_or_404(req_id)
+    extra = {}
+    if getattr(req, "extra_data", None):
+        try:
+            extra = json.loads(req.extra_data) if isinstance(req.extra_data, str) else (req.extra_data or {})
+        except Exception:
+            extra = {}
+    return render_template(
+        "admin_nakala_detail.html",
+        req=req,
+        extra=extra,
+    )
+
+
+@app.route("/admin/nakala/update/<int:req_id>", methods=["POST"])
+@admin_required
+def admin_nakala_update(req_id):
+    req = NakalaRequest.query.get_or_404(req_id)
+    status = request.form.get("status", "pending")
+    admin_note = request.form.get("admin_note", "").strip()
+    result_message = request.form.get("result_message", "").strip()
+    control_number = request.form.get("control_number", "").strip()
+
+    allowed_status = (
+        "pending",
+        "awaiting_payment",
+        "payment_failed",
+        "paid",
+        "processing",
+        "waiting_control_number",
+        "control_issued",
+        "completed",
+        "rejected",
+    )
+    if status not in allowed_status:
+        flash("Status si sahihi.", "error")
+        return redirect(url_for("dashboard"))
+
+    # Admin anaweza kuhariri bei ya control number pekee (leseni)
+    old_control_fee = int(req.control_number_fee or 0)
+    price_changed = False
+    new_control_fee = old_control_fee
+
+    if req.service_type == "license":
+        fee_raw = (request.form.get("control_number_fee") or "").strip().replace(",", "")
+        if fee_raw != "":
+            try:
+                new_control_fee = max(0, int(fee_raw))
+                if new_control_fee != old_control_fee:
+                    req.control_number_fee = new_control_fee
+                    price_changed = True
+            except (TypeError, ValueError):
+                flash("Bei ya control number si sahihi (weka namba tu).", "error")
+                return redirect(url_for("admin_nakala_detail", req_id=req.id))
+
+    result_file = request.files.get("result_file")
+    if result_file and result_file.filename:
+        allowed_ext = {"pdf", "png", "jpg", "jpeg", "webp", "gif", "bmp"}
+        ext = result_file.filename.rsplit(".", 1)[-1].lower() if "." in result_file.filename else ""
+        if ext in allowed_ext:
+            if req.result_file:
+                storage_delete(req.result_file)
+            filename = secure_filename(f"nakala_{req.id}_{secrets.token_hex(4)}.{ext}")
+            stored = storage_upload(result_file, f"nakala/{filename}")
+            if stored:
+                req.result_file = stored
+            else:
+                flash("Imeshindwa kupakia faili la matokeo. Jaribu tena.", "error")
+                return redirect(url_for("dashboard"))
+            # Faili ya leseni = completed
+            if req.service_type == "license" and status not in ("rejected",):
+                status = "completed"
+        else:
+            flash("Aina ya faili hairuhusiwi. Ruhusu: pdf, png, jpg, jpeg, webp, gif, bmp.", "error")
+            return redirect(url_for("dashboard"))
+
+    # Control number → control_issued + expires in 1 day
+    if control_number:
+        req.control_number = control_number[:80]
+        req.control_expires_at = datetime.utcnow() + timedelta(days=1)
+        if req.service_type == "license" and status in ("pending", "paid", "waiting_control_number", "processing"):
+            status = "control_issued"
+
+    req.status = status
+    req.admin_note = admin_note
+    req.result_message = result_message
+    db.session.commit()
+
+    try:
+        status_sw = {
+            "pending": "Inasubiri",
+            "awaiting_payment": "Inasubiri Malipo",
+            "payment_failed": "Malipo Yameshindwa",
+            "paid": "Imelipwa",
+            "processing": "Inashughulikiwa",
+            "waiting_control_number": "Inasubiri Control Number",
+            "control_issued": "Control Number Imetolewa",
+            "completed": "Imekamilika ✓",
+            "rejected": "Imekataliwa",
+        }.get(status, status)
+
+        # Notification: bei ya control number imebadilishwa
+        if price_changed and req.service_type == "license":
+            body = (
+                f"{req.request_code}: Bei ya control number sasa ni TSh {new_control_fee:,}. "
+                f"Fungua ombi lako kwa maelezo."
+            )
+            send_push_to_user(
+                req.user_id,
+                "Bei ya Control Number Imesasishwa",
+                body[:180],
+                url=f"/nakala/{req.id}",
+                tag=f"nakala-price-{req.id}",
+            )
+
+        if control_number and req.service_type == "license":
+            fee = req.control_number_fee or 0
+            body = (
+                f"Control Number: {req.control_number}. "
+                f"Lipa TSh {fee:,} (inaisha baada ya siku 1). "
+                f"Baada ya kulipia, leseni itatumwa."
+            )
+            send_push_to_user(
+                req.user_id,
+                "Control Number Imepatikana",
+                body,
+                url=f"/nakala/{req.id}",
+                tag=f"nakala-ctrl-{req.id}",
+            )
+        elif status == "completed" and req.result_file:
+            send_push_to_user(
+                req.user_id,
+                "Leseni / Nakala iko tayari ✓",
+                f"{req.request_code}: Pakua faili yako sasa.",
+                url=f"/nakala/{req.id}",
+                tag=f"nakala-done-{req.id}",
+            )
+        elif not price_changed:
+            body = f"{req.request_code} ({req.service_type}): {status_sw}"
+            if result_message:
+                body += f" — {result_message[:50]}"
+            elif admin_note:
+                body += f" — {admin_note[:50]}"
+            send_push_to_user(
+                req.user_id,
+                "Hali ya Ombi la Nakala",
+                body,
+                url=f"/nakala/{req.id}",
+                tag=f"nakala-{req.id}",
+            )
+    except Exception as e:
+        print(f"nakala status push: {e}")
+    flash(f"Ombi {req.request_code} limehifadhiwa.", "success")
+    # Kaa kwenye ukurasa wa detail (si dashboard) — admin aendelee kazi
+    return redirect(url_for("admin_nakala_detail", req_id=req.id))
+
+
+# ---------------------------------------------------------------------------
+# Seed data
+# ---------------------------------------------------------------------------
+def seed_data():
+    if User.query.filter_by(username="admin").first():
+        return
+
+    admin = User(
+        username="admin",
+        phone="0700000000",
+        email="admin@kijiji.tz",
+        is_admin=True,
+    )
+    admin.set_password("admin123")
+    db.session.add(admin)
+
+    demo = User(username="demo", phone="0712345678", email="demo@kijiji.tz")
+    demo.set_password("demo123")
+    db.session.add(demo)
+
+    bundles = [
+        Bundle(name="Daily", amount="1 GB", price=1000, validity="Siku 1"),
+        Bundle(name="Weekly", amount="5 GB", price=5000, validity="Siku 7"),
+        Bundle(name="Monthly", amount="15 GB", price=15000, validity="Siku 30"),
+        Bundle(name="Monthly+", amount="30 GB", price=25000, validity="Siku 30"),
+        Bundle(name="Mega", amount="50 GB", price=40000, validity="Siku 30"),
+    ]
+    for b in bundles:
+        db.session.add(b)
+
+    offers = [
+        Offer(
+            title="Offer ya Leo",
+            amount="10 GB",
+            price=8000,
+            description="Ofa maalum – lipa na upate haraka!",
+        ),
+    ]
+    for o in offers:
+        db.session.add(o)
+
+    networks_data = {
+        "Vodacom": [
+            ("📱", "Usajili wa Laini", "Sajili laini mpya ya Vodacom"),
+            ("🏪", "Uwakala", "Omba kuwa wakala wa Vodacom"),
+            ("💳", "Merchant / Lipa kwa Simu", "Usajili wa merchant na malipo"),
+            ("🔄", "Replacement", "Badilisha SIM au recovery"),
+        ],
+        "Airtel": [
+            ("📱", "Usajili wa Laini", "Sajili laini mpya ya Airtel"),
+            ("🏪", "Uwakala", "Omba kuwa wakala wa Airtel"),
+            ("💳", "Merchant", "Usajili wa merchant"),
+        ],
+        "Halotel": [
+            ("📱", "Usajili wa Laini", "Sajili laini mpya ya Halotel"),
+            ("🏪", "Uwakala", "Omba kuwa wakala wa Halotel"),
+            ("📡", "Bando & Packages", "Omba packages maalum"),
+        ],
+        "Tigo": [
+            ("📱", "Usajili wa Laini", "Sajili laini mpya ya Tigo"),
+            ("🏪", "Uwakala", "Omba kuwa wakala wa Tigo"),
+            ("💳", "Merchant", "Usajili wa merchant"),
+        ],
+        "TTCL": [
+            ("📱", "Usajili wa Laini", "Sajili laini ya TTCL"),
+            ("🏪", "Uwakala", "Huduma za uwakala TTCL"),
+        ],
+    }
+    for net_name, services in networks_data.items():
+        net = Network(network=net_name)
+        db.session.add(net)
+        db.session.flush()
+        for icon, title, desc in services:
+            svc = AgencyService(
+                network_id=net.id,
+                network=net_name,
+                title=title,
+                description=desc,
+                icon=icon,
+            )
+            db.session.add(svc)
+
+    db.session.commit()
+    print("✓ Seed data created (admin/admin123, demo/demo123)")
+
+
+def ensure_agency_columns():
+    """Add missing columns (Application + User) — safe for Railway Postgres / SQLite."""
+    from sqlalchemy import text, inspect
+    try:
+        insp = inspect(db.engine)
+        tables = insp.get_table_names()
+
+        if "application" in tables:
+            existing = {c["name"] for c in insp.get_columns("application")}
+            cols = {
+                "tin_number": "VARCHAR(50) DEFAULT ''",
+                "target_phone": "VARCHAR(20) DEFAULT ''",
+                "contact_phone": "VARCHAR(20) DEFAULT ''",
+                "tin_cert": "VARCHAR(255) DEFAULT ''",
+                "id_doc": "VARCHAR(255) DEFAULT ''",
+                "shop_photo": "VARCHAR(255) DEFAULT ''",
+                "extra_data": "TEXT DEFAULT ''",
+            }
+            with db.engine.begin() as conn:
+                for name, typedef in cols.items():
+                    if name not in existing:
+                        conn.execute(text(f"ALTER TABLE application ADD COLUMN {name} {typedef}"))
+                        print(f"✓ Added column application.{name}")
+
+        if "message" in tables:
+            existing_m = {c["name"] for c in insp.get_columns("message")}
+            msg_cols = {
+                "is_delivered": "BOOLEAN DEFAULT FALSE",
+                "is_read": "BOOLEAN DEFAULT FALSE",
+            }
+            with db.engine.begin() as conn:
+                for name, typedef in msg_cols.items():
+                    if name not in existing_m:
+                        conn.execute(text(f"ALTER TABLE message ADD COLUMN {name} {typedef}"))
+                        print(f"✓ Added column message.{name}")
+
+        if "user" in tables:
+            existing = {c["name"] for c in insp.get_columns("user")}
+            user_cols = {
+                "reset_otp": "VARCHAR(10) DEFAULT ''",
+                "reset_otp_expires": "TIMESTAMP",
+                "is_blocked": "BOOLEAN DEFAULT FALSE",
+            }
+            with db.engine.begin() as conn:
+                for name, typedef in user_cols.items():
+                    if name not in existing:
+                        conn.execute(text(f'ALTER TABLE "user" ADD COLUMN {name} {typedef}'))
+                        print(f"✓ Added column user.{name}")
+
+
+        if "nakala_request" in tables:
+            existing_n = {c["name"] for c in insp.get_columns("nakala_request")}
+            nakala_cols = {
+                "license_location": "VARCHAR(200) DEFAULT ''",
+                "control_number": "VARCHAR(80) DEFAULT ''",
+                "control_number_fee": "INTEGER DEFAULT 0",
+                "control_expires_at": "TIMESTAMP",
+                "service_fee": "INTEGER DEFAULT 0",
+                "extra_data": "TEXT DEFAULT ''",
+            }
+            with db.engine.begin() as conn:
+                for name, typedef in nakala_cols.items():
+                    if name not in existing_n:
+                        conn.execute(text(f"ALTER TABLE nakala_request ADD COLUMN {name} {typedef}"))
+                        print(f"✓ Added column nakala_request.{name}")
+
+        # Widen license_type (majina marefu ya leseni)
+        if "nakala_request" in tables:
+            try:
+                with db.engine.begin() as conn:
+                    dialect = db.engine.dialect.name
+                    if dialect == "postgresql":
+                        conn.execute(text("ALTER TABLE nakala_request ALTER COLUMN license_type TYPE VARCHAR(200)"))
+                    elif dialect == "sqlite":
+                        pass  # SQLite ignores length
+                    print("✓ nakala_request.license_type widened to 200")
+            except Exception as e2:
+                print(f"license_type widen note: {e2}")
+    except Exception as e:
+        print(f"ensure_agency_columns warning: {e}")
+
+
+with app.app_context():
+    db.create_all()
+    ensure_agency_columns()
+    seed_data()
+
+
+@app.cli.command("init-db")
+def init_db():
+    db.create_all()
+    seed_data()
+    print("Database ready.")
+
+
+# ---------------------------------------------------------------------------
+# Legal pages (Play Store readiness)
+# ---------------------------------------------------------------------------
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
+
+@app.route("/terms")
+def terms():
+    return render_template("terms.html")
+
+
+@app.route("/refund-policy")
+def refund_policy():
+    return render_template("refund_policy.html")
+
+
+@app.route("/contact")
+def contact():
+    admin = User.query.filter_by(is_admin=True).first()
+    return render_template(
+        "contact.html",
+        admin_phone=(admin.phone if admin else None),
+    )
+
+
+@app.route("/delete-account", methods=["GET", "POST"])
+def delete_account_page():
+    """Ukurasa wa kuomba kufuta akaunti (Play Store requirement)."""
+    if request.method == "POST":
+        return redirect(url_for("delete_account_request"))
+    return render_template("delete_account.html")
+
+
+@app.route("/delete-account/request", methods=["POST"])
+@login_required
+def delete_account_request():
+    """Pokea ombi la kufuta akaunti — haifuti mara moja, inajulisha admin."""
+    user = get_current_user()
+    reason = (request.form.get("reason") or "").strip()
+    confirm = request.form.get("confirm")
+    if not confirm:
+        flash("Tafadhali thibitisha kuwa unataka kufuta akaunti.", "error")
+        return redirect(url_for("delete_account_page"))
+
+    # Tuma ujumbe kwa admin kupitia chat system
+    try:
+        msg_text = (
+            f"[OMBI LA KUFUTA AKAUNTI]\n"
+            f"User: {user.username} (ID {user.id})\n"
+            f"Simu: {user.phone}\n"
+            f"Sababu: {reason or '—'}"
+        )
+        msg = Message(
+            user_id=user.id,
+            sender="customer",
+            message=msg_text,
+            is_delivered=False,
+            is_read=False,
+        )
+        db.session.add(msg)
+        db.session.commit()
+        try:
+            send_push_to_admins(
+                "Ombi la Kufuta Akaunti",
+                f"{user.username} ({user.phone}) ameomba kufuta akaunti.",
+                url=f"/admin/chat/{user.id}",
+                tag=f"delete-acc-{user.id}",
+            )
+        except Exception as e:
+            print(f"delete account push: {e}")
+    except Exception as e:
+        db.session.rollback()
+        print(f"delete account request error: {e}")
+
+    flash(
+        "Ombi lako la kufuta akaunti limetumwa. Timu yetu itashughulikia ndani ya siku 7–14 za kazi. "
+        "Utapata taarifa kupitia chat.",
+        "success",
+    )
+    return redirect(url_for("profile"))
+
+
+@app.route('/sw.js')
+def service_worker():
+    return send_from_directory('static', 'sw.js', mimetype='application/javascript')
+
+
+@app.route("/media/<path:filename>")
+def media_file(filename):
+    """Serve uploads — Supabase public URL au disk ya local.
+    ?download=1 → attachment (local only; Supabase inatumia URL ya umma).
+    """
+    force_dl = request.args.get("download") in ("1", "true", "yes")
+    base_name = os.path.basename(filename) or "faili"
+    path = filename.lstrip("/")
+
+    # Supabase Storage (public bucket)
+    if supabase_storage_enabled():
+        public = storage_public_url(path)
+        if public:
+            return redirect(public)
+
+    folder = app.config["UPLOAD_FOLDER"]
+    full = os.path.join(folder, path)
+    if os.path.isfile(full):
+        return send_from_directory(
+            folder, path,
+            as_attachment=force_dl,
+            download_name=base_name if force_dl else None,
+        )
+    static_fallback = os.path.join(basedir, "static", "uploads")
+    full2 = os.path.join(static_fallback, path)
+    if os.path.isfile(full2):
+        return send_from_directory(
+            static_fallback, path,
+            as_attachment=force_dl,
+            download_name=base_name if force_dl else None,
+        )
+    return f"File not found: {filename}", 404
+
+
+@app.route("/admin/debug-uploads")
+@admin_required
+def debug_uploads():
+    folder = app.config["UPLOAD_FOLDER"]
+    slide_dir = os.path.join(folder, "slide")
+    files = []
+    if os.path.isdir(slide_dir):
+        try:
+            files = os.listdir(slide_dir)
+        except OSError as e:
+            files = [f"ERROR: {e}"]
+    slides_db = Slide.query.order_by(Slide.id).all()
+    lines = [
+        f"UPLOAD_FOLDER = {folder}",
+        f"UPLOAD_ROOT env = {os.environ.get('UPLOAD_ROOT', '(not set)')}",
+        f"basedir = {basedir}",
+        f"slide folder exists = {os.path.isdir(slide_dir)}",
+        f"files in slide/ = {files}",
+        "",
+        "Slides in DB:",
+    ]
+    for s in slides_db:
+        path = os.path.join(slide_dir, s.image)
+        lines.append(
+            f"  id={s.id} image={s.image!r} active={s.is_active} "
+            f"file_exists={os.path.isfile(path)} "
+            f"url=/media/slide/{s.image}"
+        )
+    return "<pre style='font-size:13px;padding:16px;white-space:pre-wrap;'>" + "\n".join(lines) + "</pre>"
+
+
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(
+        os.path.join(app.root_path, 'static'),
+        'favicon.png',
+        mimetype='image/png'
+    )
+
+
+@app.route("/.well-known/assetlinks.json")
+def digital_asset_links():
+    return send_from_directory(
+        os.path.join(app.root_path, "static", ".well-known"),
+        "assetlinks.json",
+        mimetype="application/json",
+    )
+
+
+
+
+@app.route('/robots.txt')
+def robots():
+    return send_from_directory(app.static_folder, 'robots.txt')
+
+@app.route('/sitemap.xml')
+def sitemap():
+    return send_from_directory(app.static_folder, 'sitemap.xml')
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
