@@ -93,8 +93,8 @@ PAYMENT_NAME = os.environ.get("PAYMENT_NAME", "Matondo Maduhu")
 PAYMENT_NETWORK = os.environ.get("PAYMENT_NETWORK", "Vodacom")
 
 # ClickPesa (USSD push — Voda, Tigo, Airtel, Halotel n.k.)
-CLICKPESA_CLIENT_ID = os.environ.get("CLICKPESA_CLIENT_ID", "")
-CLICKPESA_API_KEY = os.environ.get("CLICKPESA_API_KEY", "")
+CLICKPESA_CLIENT_ID = (os.environ.get("CLICKPESA_CLIENT_ID") or "").strip()
+CLICKPESA_API_KEY = (os.environ.get("CLICKPESA_API_KEY") or "").strip()
 
 # Supabase Storage (faili zote: picha, PDF, slides)
 # Project Settings → API → Project URL + service_role key (secret)
@@ -666,18 +666,27 @@ def clean_payment_error(data, fallback="Malipo yameshindwa. Jaribu tena."):
             or data.get("detail")
             or ""
         )
+        # ClickPesa inaweza kurudisha list
+        if isinstance(msg, (list, tuple)):
+            msg = " ".join(str(x) for x in msg if x)
         if not msg and data:
-            # chukua value ya kwanza ya string
             for v in data.values():
                 if isinstance(v, str) and v.strip():
                     msg = v
                     break
+                if isinstance(v, (list, tuple)) and v:
+                    msg = " ".join(str(x) for x in v if x)
+                    break
         if not msg:
             msg = ""
+    elif isinstance(data, (list, tuple)):
+        msg = " ".join(str(x) for x in data if x)
     else:
         msg = str(data)
 
-    msg = (msg or "").strip()
+    if not isinstance(msg, str):
+        msg = str(msg or "")
+    msg = msg.strip()
     # Ondoa mabano ya dict yaliyoandikwa kama string
     if msg.startswith("{") and "message" in msg:
         import re
@@ -712,7 +721,11 @@ def clean_payment_error(data, fallback="Malipo yameshindwa. Jaribu tena."):
 
 
 def normalize_phone(phone):
-    phone = phone.strip()
+    if phone is None:
+        phone = ""
+    if isinstance(phone, (list, tuple)):
+        phone = phone[0] if phone else ""
+    phone = str(phone).strip().replace(" ", "")
     if phone.startswith("0"):
         return "255" + phone[1:]
     elif phone.startswith("+255"):
@@ -1099,11 +1112,17 @@ def order():
         offer_price = str(selected_bundle.price)
 
     if request.method == "POST":
-        payment_phone = request.form.get("payment_phone", "").strip()
-        target_phone = request.form.get("target_phone", "").strip()
-        amount = request.form.get("amount", "").strip()
-        price_raw = request.form.get("price", "0").strip()
-        note = request.form.get("note", "").strip()
+        def _fs(key, default=""):
+            v = request.form.get(key, default)
+            if isinstance(v, (list, tuple)):
+                v = v[0] if v else default
+            return str(v or default).strip()
+
+        payment_phone = _fs("payment_phone")
+        target_phone = _fs("target_phone")
+        amount = _fs("amount")
+        price_raw = _fs("price", "0")
+        note = _fs("note")
 
         try:
             price = int(price_raw) if price_raw else 0
