@@ -31,13 +31,19 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android licenses
+      # ubuntu-latest tayari ina Android SDK — usitumie setup-android (package 'tools' imekufa)
+      - name: Configure Android SDK
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" || true
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+          # Licenses + platform inayohitajika na Capacitor 6
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -20
+          sdkmanager --list_installed 2>/dev/null | head -30 || true
 
       - name: Install npm packages
         run: |
@@ -79,7 +85,6 @@ jobs:
           if [ -n "$GJSON" ]; then
             printf '%s\n' "$GJSON" > android/app/google-services.json
             echo "google-services.json OK"
-            # Enable Google Services plugin only when file exists
             if ! grep -q "com.google.gms:google-services" android/build.gradle; then
               sed -i "/dependencies {/a\        classpath 'com.google.gms:google-services:4.4.2'" android/build.gradle
             fi
@@ -87,7 +92,7 @@ jobs:
               echo "apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
             fi
           else
-            echo "::warning::GOOGLE_SERVICES_JSON secret missing. APK will build but native FCM push will not work until you add the secret and rebuild."
+            echo "::warning::GOOGLE_SERVICES_JSON secret missing. APK builds; native FCM needs the secret + rebuild."
           fi
 
       - name: Build debug APK
@@ -96,7 +101,7 @@ jobs:
           GRADLE_OPTS: "-Xmx2g -Dorg.gradle.daemon=false"
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Locate and upload APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: sule-business-debug
