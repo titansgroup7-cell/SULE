@@ -40,25 +40,25 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -15 || true
 
-      - name: Install npm packages
+      - name: Install Capacitor (explicit)
         run: |
           node -v
           npm -v
-          npm cache clean --force
-          for i in 1 2 3; do
-            echo "=== npm install attempt $i ==="
-            if npm install --no-audit --no-fund --prefer-online --fetch-retries=5 --fetch-retry-mintimeout=20000; then
-              echo "npm install OK"
-              break
-            fi
-            echo "attempt $i failed, retry..."
-            sleep 5
-            if [ "$i" = "3" ]; then
-              echo "All npm attempts failed"
-              exit 1
-            fi
-          done
-          npx cap --version
+          rm -f package-lock.json
+          rm -rf node_modules
+          npm install --no-audit --no-fund --loglevel=error \
+            @capacitor/core@6.2.0 \
+            @capacitor/cli@6.2.0 \
+            @capacitor/android@6.2.0 \
+            @capacitor/app@6.0.2 \
+            @capacitor/haptics@6.0.2 \
+            @capacitor/keyboard@6.0.3 \
+            @capacitor/push-notifications@6.0.3 \
+            @capacitor/splash-screen@6.0.3 \
+            @capacitor/status-bar@6.0.2
+          test -x node_modules/.bin/cap
+          ./node_modules/.bin/cap --version
+          ls node_modules/@capacitor/
 
       - name: Prepare www folder
         run: |
@@ -83,8 +83,8 @@ jobs:
       - name: Create Android project
         run: |
           rm -rf android
-          npx cap add android
-          npx cap sync android
+          ./node_modules/.bin/cap add android
+          ./node_modules/.bin/cap sync android
           test -f android/gradlew
           chmod +x android/gradlew
 
