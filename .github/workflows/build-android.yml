@@ -20,10 +20,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "20"
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -31,23 +31,33 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      # ubuntu-latest tayari ina Android SDK — usitumie setup-android (package 'tools' imekufa)
       - name: Configure Android SDK
         run: |
-          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
-          # Licenses + platform inayohitajika na Capacitor 6
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -20
-          sdkmanager --list_installed 2>/dev/null | head -30 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -15 || true
 
       - name: Install npm packages
         run: |
-          npm install --no-audit --no-fund
+          node -v
+          npm -v
+          npm cache clean --force
+          for i in 1 2 3; do
+            echo "=== npm install attempt $i ==="
+            if npm install --no-audit --no-fund --prefer-online --fetch-retries=5 --fetch-retry-mintimeout=20000; then
+              echo "npm install OK"
+              break
+            fi
+            echo "attempt $i failed, retry..."
+            sleep 5
+            if [ "$i" = "3" ]; then
+              echo "All npm attempts failed"
+              exit 1
+            fi
+          done
           npx cap --version
 
       - name: Prepare www folder
