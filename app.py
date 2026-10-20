@@ -4253,6 +4253,26 @@ def debug_uploads():
 
 
 
+
+@app.route("/download-app")
+def download_app():
+    """Ukurasa wa kupakua SULE BUSINESS APK."""
+    return render_template("download_app.html")
+
+
+@app.route("/download-app/apk")
+def download_apk_file():
+    """Serve SULE BUSINESS APK (nyepesi ~4.3MB)."""
+    apk_dir = os.path.join(app.root_path, "static", "apk")
+    return send_from_directory(
+        apk_dir,
+        "sule-business.apk",
+        as_attachment=True,
+        download_name="SULE-BUSINESS.apk",
+        mimetype="application/vnd.android.package-archive",
+    )
+
+
 @app.route('/favicon.ico')
 def favicon():
     return send_from_directory(
