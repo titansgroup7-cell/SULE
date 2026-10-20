@@ -800,6 +800,43 @@
             }).catch(function() {});
         });
     }
+
+    // Capacitor native push (FCM) — inafanya kazi hata app imefungwa kabisa
+    async function registerCapacitorPush() {
+        if (!isLoggedIn) return;
+        try {
+            var Cap = window.Capacitor;
+            if (!Cap || !Cap.Plugins || !Cap.Plugins.PushNotifications) return;
+            var PushNotifications = Cap.Plugins.PushNotifications;
+            var perm = await PushNotifications.requestPermissions();
+            if (perm.receive !== 'granted') return;
+            await PushNotifications.register();
+            PushNotifications.addListener('registration', async function(token) {
+                try {
+                    await fetch('/api/push/device-token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            token: token.value,
+                            platform: (Cap.getPlatform && Cap.getPlatform()) || 'android'
+                        })
+                    });
+                } catch (e) { console.warn('device token save failed', e); }
+            });
+            PushNotifications.addListener('registrationError', function(err) {
+                console.warn('push registration error', err);
+            });
+            PushNotifications.addListener('pushNotificationActionPerformed', function(notif) {
+                var data = (notif.notification && notif.notification.data) || {};
+                var url = data.url || '/';
+                if (url && window.location.pathname !== url) window.location.href = url;
+            });
+        } catch (e) {
+            console.warn('Capacitor push setup failed', e);
+        }
+    }
+    if (document.readyState === 'complete') setTimeout(registerCapacitorPush, 800);
+    else window.addEventListener('load', function() { setTimeout(registerCapacitorPush, 800); });
 })();
 </script>
 </body>

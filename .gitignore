@@ -4,3 +4,12 @@ venv/
 *.db
 instance/
 static/uploads/*
+node_modules/
+android/
+ios/
+.idea/
+*.iml
+.DS_Store
+google-services.json
+*.jks
+*.keystore

@@ -5,3 +5,4 @@ requests
 Werkzeug
 gunicorn
 pywebpush>=1.14.0
+google-auth>=2.29.0

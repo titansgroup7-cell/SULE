@@ -15,47 +15,119 @@
         color: #888;
         margin: 0 0 14px;
     }
-    .nav-tabs {
+    /* Admin hamburger drawer */
+    .admin-menu-btn {
+        border: 0;
+        background: #f1f1f1;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-bottom: 20px;
+        place-items: center;
+        cursor: pointer;
+        flex-shrink: 0;
     }
-    .nav-tabs.five {
-        grid-template-columns: 1fr 1fr;
+    .admin-menu-btn svg {
+        width: 22px;
+        height: 22px;
+        stroke: #333;
+        fill: none;
+        stroke-width: 2.2;
+        stroke-linecap: round;
+    }
+    .admin-drawer-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 200;
+    }
+    .admin-drawer-overlay.open { display: block; }
+    .admin-drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: min(300px, 86vw);
+        height: 100%;
+        background: #fff;
+        z-index: 210;
+        transform: translateX(100%);
+        transition: transform 0.25s ease;
+        box-shadow: -8px 0 28px rgba(0,0,0,0.12);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+    }
+    .admin-drawer.open { transform: translateX(0); }
+    .admin-drawer-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 18px;
+        border-bottom: 1px solid #eee;
+    }
+    .admin-drawer-head strong {
+        font-size: 16px;
+        font-weight: 800;
+    }
+    .admin-drawer-close {
+        border: 0;
+        background: #f1f1f1;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        font-size: 18px;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+    }
+    .nav-tabs {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 12px;
+        margin: 0;
     }
     .nav-tab {
-        padding: 14px 12px;
-        border: 1.5px solid #eee;
-        border-radius: 14px;
-        background: #fff;
-        font-size: 13px;
-        font-weight: 800;
-        color: #444;
+        padding: 14px 14px;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        font-size: 14px;
+        font-weight: 700;
+        color: #333;
         cursor: pointer;
-        text-align: center;
+        text-align: left;
         transition: 0.15s;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
     }
     .nav-tab:hover {
         background: #fff5ef;
-        border-color: #ffd0b0;
     }
     .nav-tab.active {
         background: linear-gradient(135deg, #ff7800, #ed4d00);
-        border-color: transparent;
         color: #fff;
-        box-shadow: 0 6px 16px rgba(237,77,0,0.2);
+        box-shadow: 0 4px 12px rgba(237,77,0,0.18);
     }
     .nav-tab .count {
         display: inline-block;
-        margin-left: 6px;
-        padding: 2px 7px;
+        margin-left: 8px;
+        padding: 2px 8px;
         border-radius: 20px;
         background: rgba(0,0,0,0.08);
         font-size: 11px;
+        font-weight: 800;
     }
     .nav-tab.active .count {
         background: rgba(255,255,255,0.25);
+    }
+    .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
     .tab-panel {
         display: none;
@@ -449,7 +521,7 @@
         font-weight: 800;
         vertical-align: middle;
     }
-    /* Payment / ClickPesa statuses */
+    /* Payment statuses */
     .status.awaiting_payment,
     .status.wait-pay {
         background: #fff3e0;
@@ -578,8 +650,54 @@
         <div class="brand">Admin <span>Dashboard</span></div>
         <div class="muted">MR. SULE DIGITAL SERVICES BUSINESS</div>
     </div>
-    <a href="{{ url_for('home') }}" class="icon-btn">←</a>
+    <div class="topbar-actions">
+        <button type="button" class="admin-menu-btn" id="adminMenuBtn" aria-label="Menu">
+            <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <a href="{{ url_for('home') }}" class="icon-btn">←</a>
+    </div>
 </header>
+
+<!-- Admin hamburger drawer -->
+<div class="admin-drawer-overlay" id="adminDrawerOverlay"></div>
+<aside class="admin-drawer" id="adminDrawer" aria-hidden="true">
+    <div class="admin-drawer-head">
+        <strong>Menu</strong>
+        <button type="button" class="admin-drawer-close" id="adminDrawerClose" aria-label="Funga">×</button>
+    </div>
+    <div class="nav-tabs">
+        <button type="button" class="nav-tab active" data-tab="orders">
+            <span>📦 Oda za Bando</span>
+            {% if pending_count %}<span class="count">{{ pending_count }}</span>{% endif %}
+        </button>
+        <button type="button" class="nav-tab" data-tab="messages">
+            <span>💬 Ujumbe</span>
+            {% if chat_unread %}<span class="count">{{ chat_unread }}</span>{% elif chat_threads %}<span class="count">{{ chat_threads|length }}</span>{% endif %}
+        </button>
+        <button type="button" class="nav-tab" data-tab="nakala">
+            <span>📄 Nakala</span>
+            {% if nakala_pending %}<span class="count">{{ nakala_pending }}</span>{% endif %}
+        </button>
+        <button type="button" class="nav-tab" data-tab="agency">
+            <span>🏪 Uwakala</span>
+            {% if agency_pending %}<span class="count">{{ agency_pending }}</span>{% endif %}
+        </button>
+        <button type="button" class="nav-tab" data-tab="users">
+            <span>Users</span>
+            {% if users_count %}<span class="count">{{ users_count }}</span>{% endif %}
+        </button>
+        <button type="button" class="nav-tab" data-tab="announcement">
+            <span>📢 Matangazo</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="trash">
+            <span>🗑️ Trash</span>
+            {% if trash_count %}<span class="count">{{ trash_count }}</span>{% endif %}
+        </button>
+        <button type="button" class="nav-tab" data-tab="account">
+            <span>👤 Akaunti Yangu</span>
+        </button>
+    </div>
+</aside>
 
 <div class="page">
 
@@ -603,45 +721,11 @@
         </div>
     </div>
 
-    <!-- NAV BUTTONS -->
-    <div class="nav-tabs">
-        <button type="button" class="nav-tab active" data-tab="orders">
-            📦 Oda za Bando
-            {% if pending_count %}<span class="count">{{ pending_count }}</span>{% endif %}
-        </button>
-        <button type="button" class="nav-tab" data-tab="messages">
-            💬 Ujumbe
-            {% if chat_unread %}<span class="count">{{ chat_unread }}</span>{% elif chat_threads %}<span class="count">{{ chat_threads|length }}</span>{% endif %}
-        </button>
-        <button type="button" class="nav-tab" data-tab="nakala">
-            📄 Nakala
-            {% if nakala_pending %}<span class="count">{{ nakala_pending }}</span>{% endif %}
-        </button>
-        <button type="button" class="nav-tab" data-tab="agency">
-            🏪 Uwakala
-            {% if agency_pending %}<span class="count">{{ agency_pending }}</span>{% endif %}
-        </button>
-        <button type="button" class="nav-tab" data-tab="users">
-            Users
-            {% if users_count %}<span class="count">{{ users_count }}</span>{% endif %}
-        </button>
-        <button type="button" class="nav-tab" data-tab="announcement">
-            📢 Matangazo
-        </button>
-        <button type="button" class="nav-tab" data-tab="trash">
-            🗑️ Trash
-            {% if trash_count %}<span class="count">{{ trash_count }}</span>{% endif %}
-        </button>
-        <button type="button" class="nav-tab" data-tab="account">
-            👤 Akaunti Yangu
-        </button>
-    </div>
-
     <!-- ==================== ODA ZA BANDO ==================== -->
     <div class="tab-panel active" id="panel-orders">
         <div style="margin:0 0 12px;">
             <h2 class="dash-section-title">Oda za Bando</h2>
-            <p class="dash-section-sub">ClickPesa: Inasubiri Malipo · Imelipwa · Imekamilika . <strong>Malipo Yameshindwa</strong> yanaenda <a href="#trash" onclick="openDashTab('trash');return false;" style="color:#f56b00;">Trash</a>.</p>
+            <p class="dash-section-sub">Inasubiri Malipo · Imelipwa · Imekamilika. <strong>Malipo Yameshindwa</strong> yanaenda <a href="#trash" onclick="openDashTab('trash');return false;" style="color:#f56b00;">Trash</a>.</p>
         </div>
 
         <form method="GET" action="{{ url_for('dashboard') }}" class="user-search-bar" style="margin-bottom:14px;">
@@ -699,7 +783,7 @@
 
                 {% if order.order_reference %}
                 <br>
-                <strong>Ref (ClickPesa):</strong> {{ order.order_reference }}
+                <strong>Ref:</strong> {{ order.order_reference }}
                 {% endif %}
 
                 {% if order.status == "failed" and order.fail_reason %}
@@ -719,7 +803,7 @@
             </form>
             {% elif order.status == "awaiting_payment" %}
             <p class="meta-time" style="margin-top:10px;color:#e65100;">
-                ClickPesa: bado haijathibitisha malipo (USSD PIN / timeout).
+                Bado haijathibitisha malipo (USSD PIN / timeout).
             </p>
             {% elif order.status == "failed" %}
             <form method="POST"
@@ -1220,7 +1304,7 @@
         <div style="margin:0 0 12px;">
             <h2 class="dash-section-title">🗑️ Trash — Malipo Yameshindwa</h2>
             <p class="dash-section-sub">
-                Oda na Nakala zilizoshindwa malipo (ClickPesa). Hazionekani kwenye orodha kuu.
+                Oda na Nakala zilizoshindwa malipo. Hazionekani kwenye orodha kuu.
                 Unaweza kufuta moja moja au zote.
             </p>
         </div>
@@ -1379,6 +1463,28 @@
 </div>
 
 <script>
+// Admin drawer (hamburger)
+function openAdminDrawer() {
+    var d = document.getElementById('adminDrawer');
+    var o = document.getElementById('adminDrawerOverlay');
+    if (d) { d.classList.add('open'); d.setAttribute('aria-hidden', 'false'); }
+    if (o) o.classList.add('open');
+}
+function closeAdminDrawer() {
+    var d = document.getElementById('adminDrawer');
+    var o = document.getElementById('adminDrawerOverlay');
+    if (d) { d.classList.remove('open'); d.setAttribute('aria-hidden', 'true'); }
+    if (o) o.classList.remove('open');
+}
+(function() {
+    var btn = document.getElementById('adminMenuBtn');
+    var closeBtn = document.getElementById('adminDrawerClose');
+    var overlay = document.getElementById('adminDrawerOverlay');
+    if (btn) btn.addEventListener('click', openAdminDrawer);
+    if (closeBtn) closeBtn.addEventListener('click', closeAdminDrawer);
+    if (overlay) overlay.addEventListener('click', closeAdminDrawer);
+})();
+
 // Tab switching
 function openDashTab(tab) {
     document.querySelectorAll('.nav-tab').forEach(function(b) {
@@ -1387,6 +1493,7 @@ function openDashTab(tab) {
     document.querySelectorAll('.tab-panel').forEach(function(p) {
         p.classList.toggle('active', p.id === 'panel-' + tab);
     });
+    closeAdminDrawer();
 }
 document.querySelectorAll('.nav-tab').forEach(function(btn) {
     btn.addEventListener('click', function() {
@@ -1413,6 +1520,9 @@ if (window.location.hash === '#nakala') {
 }
 if (window.location.hash === '#agency') {
     openDashTab('agency');
+}
+if (window.location.hash === '#announcement') {
+    openDashTab('announcement');
 }
 
 function toggleUserDetail(id) {

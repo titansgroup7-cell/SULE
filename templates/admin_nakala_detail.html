@@ -379,7 +379,7 @@ Mtoa taarifa: {{ req.full_name }} | {{ req.phone1 }}
                 <label>Status</label>
                 <select class="input" name="status">
                     <option value="pending" {% if req.status == "pending" %}selected{% endif %}>Inasubiri (pending)</option>
-                    <option value="awaiting_payment" {% if req.status == "awaiting_payment" %}selected{% endif %}>Inasubiri Malipo (ClickPesa)</option>
+                    <option value="awaiting_payment" {% if req.status == "awaiting_payment" %}selected{% endif %}>Inasubiri Malipo</option>
                     <option value="payment_failed" {% if req.status == "payment_failed" %}selected{% endif %}>Malipo Yameshindwa</option>
                     <option value="paid" {% if req.status == "paid" %}selected{% endif %}>Imelipwa</option>
                     <option value="processing" {% if req.status == "processing" %}selected{% endif %}>Inachakatwa</option>

@@ -100,7 +100,7 @@ CLICKPESA_API_KEY = (os.environ.get("CLICKPESA_API_KEY") or "").strip()
 # Project Settings → API → Project URL + service_role key (secret)
 SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "") or os.environ.get("SUPABASE_KEY", "")
-SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "uploads")
+SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "upload")
 
 # SMS OTP (Beem Africa - SMS ya kawaida, si bulk marketing)
 # Jisajili: https://beem.africa  → API key + Secret
@@ -118,6 +118,15 @@ VAPID_PUBLIC_KEY = os.environ.get(
     "BDLkkmrKM007eSEby3amhKG3or37FOULg6bpmgnKL_M2HsNLxZXhIVA9fmqva0YPYVd3wo3U4omh_CwZUMqHZAo",
 )
 VAPID_CLAIMS = {"sub": os.environ.get("VAPID_CONTACT", "mailto:keyaramadhan0@gmail.com")}
+
+# Firebase Cloud Messaging (Capacitor / Android native push — hata app imefungwa)
+# Firebase Console → Project Settings → Cloud Messaging → Server key (legacy)
+# au FCM_SERVER_KEY kutoka Cloud Messaging API
+FCM_SERVER_KEY = (os.environ.get("FCM_SERVER_KEY") or "").strip()
+FCM_SERVICE_ACCOUNT_JSON = (os.environ.get("FCM_SERVICE_ACCOUNT_JSON") or "").strip()
+_fcm_project_id = None
+_fcm_access_token = None
+_fcm_token_expiry = 0
 
 # ---------------------------------------------------------------------------
 # Models
@@ -298,6 +307,17 @@ class PushSubscription(db.Model):
     auth = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship("User", backref=db.backref("push_subscriptions", lazy=True, cascade="all, delete-orphan"))
+
+
+class DeviceToken(db.Model):
+    """FCM / native device token (Capacitor Android/iOS) — push hata app imefungwa."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    token = db.Column(db.Text, unique=True, nullable=False)
+    platform = db.Column(db.String(20), default="android")  # android | ios | web
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user = db.relationship("User", backref=db.backref("device_tokens", lazy=True, cascade="all, delete-orphan"))
 
 
 class ChatPresence(db.Model):
@@ -813,20 +833,148 @@ def send_web_push(subscription_info, title, body, url="/", tag="sule"):
         return False
 
 
+def _fcm_get_access_token():
+    """OAuth token kutoka service account JSON (FCM HTTP v1)."""
+    global _fcm_project_id, _fcm_access_token, _fcm_token_expiry
+    if not FCM_SERVICE_ACCOUNT_JSON:
+        return None, None
+    now = time.time()
+    if _fcm_access_token and now < _fcm_token_expiry - 60:
+        return _fcm_access_token, _fcm_project_id
+    try:
+        from google.oauth2 import service_account
+        from google.auth.transport.requests import Request as GoogleAuthRequest
+        info = json.loads(FCM_SERVICE_ACCOUNT_JSON)
+        _fcm_project_id = info.get("project_id")
+        creds = service_account.Credentials.from_service_account_info(
+            info,
+            scopes=["https://www.googleapis.com/auth/firebase.messaging"],
+        )
+        creds.refresh(GoogleAuthRequest())
+        _fcm_access_token = creds.token
+        _fcm_token_expiry = now + 3500
+        return _fcm_access_token, _fcm_project_id
+    except Exception as e:
+        print(f"fcm auth error: {e}")
+        return None, None
+
+
+def _fcm_delete_bad_token(token):
+    try:
+        DeviceToken.query.filter_by(token=token).delete()
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+def send_fcm(token, title, body, url="/", tag="sule"):
+    """Tuma FCM kwa device token (HTTP v1 au Legacy)."""
+    if not token:
+        return False
+    # --- HTTP v1 (service account) ---
+    access, project_id = _fcm_get_access_token()
+    if access and project_id:
+        try:
+            resp = requests.post(
+                f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
+                headers={
+                    "Authorization": f"Bearer {access}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "message": {
+                        "token": token,
+                        "notification": {"title": title, "body": body},
+                        "data": {
+                            "title": title,
+                            "body": body,
+                            "url": url or "/",
+                            "tag": tag or "sule",
+                        },
+                        "android": {
+                            "priority": "high",
+                            "notification": {
+                                "sound": "default",
+                                "channel_id": "default",
+                                "tag": tag or "sule",
+                            },
+                        },
+                    }
+                },
+                timeout=15,
+            )
+            if resp.status_code in (200, 201):
+                return True
+            err = (resp.text or "")[:200]
+            if "UNREGISTERED" in err or "INVALID_ARGUMENT" in err and "token" in err.lower():
+                _fcm_delete_bad_token(token)
+            print(f"fcm v1 error {resp.status_code}: {err}")
+            return False
+        except Exception as e:
+            print(f"fcm v1 error: {e}")
+            return False
+
+    # --- Legacy Server key ---
+    if not FCM_SERVER_KEY:
+        return False
+    try:
+        resp = requests.post(
+            "https://fcm.googleapis.com/fcm/send",
+            headers={
+                "Authorization": f"key={FCM_SERVER_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "to": token,
+                "priority": "high",
+                "content_available": True,
+                "notification": {
+                    "title": title,
+                    "body": body,
+                    "sound": "default",
+                    "click_action": "FCM_PLUGIN_ACTIVITY",
+                    "tag": tag,
+                },
+                "data": {
+                    "title": title,
+                    "body": body,
+                    "url": url or "/",
+                    "tag": tag,
+                },
+            },
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            data = resp.json() if resp.content else {}
+            if data.get("failure") and data.get("results"):
+                for r in data["results"]:
+                    if r.get("error") in ("NotRegistered", "InvalidRegistration"):
+                        _fcm_delete_bad_token(token)
+                        return False
+            return True
+        print(f"fcm error {resp.status_code}: {resp.text[:160]}")
+        return False
+    except Exception as e:
+        print(f"fcm error: {e}")
+        return False
+
+
 def send_push_to_user(user_id, title, body, url="/", tag="sule"):
-    """Tuma push kwa user yoyote aliyejiandikisha (haraka, kila subscription)."""
+    """Tuma push (Web Push + FCM native) kwa user."""
     if not user_id:
         return 0
-    subs = PushSubscription.query.filter_by(user_id=user_id).all()
-    if not subs:
-        return 0
     sent = 0
-    for s in subs:
+    # Web Push (browser / PWA)
+    for s in PushSubscription.query.filter_by(user_id=user_id).all():
         info = {
             "endpoint": s.endpoint,
             "keys": {"p256dh": s.p256dh, "auth": s.auth},
         }
         if send_web_push(info, title, body, url, tag):
+            sent += 1
+    # FCM (Capacitor native — hata app imefungwa)
+    for d in DeviceToken.query.filter_by(user_id=user_id).all():
+        if send_fcm(d.token, title, body, url, tag):
             sent += 1
     return sent
 
@@ -842,7 +990,7 @@ def send_push_to_admins(title, body, url="/dashboard", tag="admin"):
 
 
 # ---------------------------------------------------------------------------
-# Web Push API
+# Web Push + Device Token API
 # ---------------------------------------------------------------------------
 @app.route("/api/push/vapid-public-key")
 def push_vapid_public_key():
@@ -885,6 +1033,39 @@ def push_unsubscribe():
     endpoint = (data.get("endpoint") or "").strip()
     if endpoint:
         PushSubscription.query.filter_by(user_id=user.id, endpoint=endpoint).delete()
+        db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/push/device-token", methods=["POST"])
+@login_required
+def push_device_token():
+    """Sajili FCM token kutoka Capacitor native app."""
+    user = get_current_user()
+    data = request.get_json(silent=True) or {}
+    token = (data.get("token") or "").strip()
+    platform = (data.get("platform") or "android").strip().lower()[:20]
+    if not token or len(token) < 20:
+        return jsonify({"ok": False, "error": "token required"}), 400
+    existing = DeviceToken.query.filter_by(token=token).first()
+    if existing:
+        existing.user_id = user.id
+        existing.platform = platform
+        existing.updated_at = datetime.utcnow()
+    else:
+        db.session.add(DeviceToken(user_id=user.id, token=token, platform=platform))
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/push/device-token", methods=["DELETE"])
+@login_required
+def push_device_token_delete():
+    user = get_current_user()
+    data = request.get_json(silent=True) or {}
+    token = (data.get("token") or "").strip()
+    if token:
+        DeviceToken.query.filter_by(user_id=user.id, token=token).delete()
         db.session.commit()
     return jsonify({"ok": True})
 
@@ -2882,7 +3063,7 @@ def nakala_pay():
                     send_push_to_user(
                         req.user_id,
                         "Ombi la malipo limeshushwa",
-                        "Angalia simu, ingiza PIN. Utajulishwa baada ya ClickPesa kuthibitisha.",
+                        "Angalia simu, ingiza PIN. Utajulishwa baada ya malipo kuthibitishwa.",
                         url=f"/nakala/{req.id}",
                         tag=f"nakala-init-{req.id}",
                     )
@@ -2890,7 +3071,7 @@ def nakala_pay():
                     print(f"nakala pay push: {e}")
                 flash(
                     "Ombi la malipo limeshushwa! Angalia simu yako na uingize PIN. "
-                    "Status itakuwa «Imelipwa» baada tu ya ClickPesa kuthibitisha.",
+                    "Status itakuwa «Imelipwa» baada tu ya malipo kuthibitishwa.",
                     "success",
                 )
                 return redirect(url_for("my_nakala"))
@@ -3043,7 +3224,7 @@ def nakala_repay(req_id):
                 pass
             flash(
                 "Ombi la malipo limeshushwa tena! Ingiza PIN kwenye simu. "
-                "«Imelipwa» itaonekana baada ya ClickPesa kuthibitisha.",
+                "«Imelipwa» itaonekana baada ya malipo kuthibitishwa.",
                 "success",
             )
             return redirect(url_for("nakala_detail", req_id=req.id))
@@ -3330,6 +3511,7 @@ def admin_user_delete(user_id):
     Order.query.filter_by(user_id=uid).delete()
     Message.query.filter_by(user_id=uid).delete()
     PushSubscription.query.filter_by(user_id=uid).delete()
+    DeviceToken.query.filter_by(user_id=uid).delete()
     for app_row in Application.query.filter_by(user_id=uid).all():
         AgencyMessage.query.filter_by(application_id=app_row.id).delete()
         db.session.delete(app_row)
