@@ -2,101 +2,343 @@
 {% block title %}Historia ya Vocha za WiFi{% endblock %}
 {% block content %}
 <style>
-.wh-wrap { padding: 14px 14px 90px; max-width: 520px; margin: 0 auto; }
-.wh-top { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+:root {
+    --w-teal-900: #064e48;
+    --w-teal-700: #0f766e;
+    --w-teal-500: #14b8a6;
+    --w-teal-100: #d9f6ef;
+    --w-bg: #f4f7f6;
+    --w-surface: #ffffff;
+    --w-text: #0f1f1d;
+    --w-muted: #5b6b68;
+    --w-line: #dfe7e5;
+    --w-shadow: 0 1px 2px rgba(6,78,72,.06), 0 8px 24px rgba(6,78,72,.08);
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --w-bg: #0c1514;
+        --w-surface: #142220;
+        --w-text: #e8f3f1;
+        --w-muted: #93a9a5;
+        --w-line: #223633;
+        --w-teal-100: #123c37;
+        --w-shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+}
+
+.wh-wrap {
+    padding: 14px 14px calc(90px + env(safe-area-inset-bottom, 0px));
+    max-width: 520px;
+    margin: 0 auto;
+    color: var(--w-text);
+}
+.wh-wrap svg {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* ---------- Top bar ---------- */
+.wh-top { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .wh-back {
-    width: 38px; height: 38px; border-radius: 12px; background: #fff;
-    border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center;
-    color: #334155;
+    width: 44px; height: 44px;
+    border-radius: 14px;
+    background: var(--w-surface);
+    border: 1px solid var(--w-line);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--w-text);
+    flex-shrink: 0;
 }
-.wh-back svg {
-    width: 20px; height: 20px; stroke: currentColor; fill: none;
-    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+.wh-back svg { width: 20px; height: 20px; }
+.wh-top h1 { margin: 0; font-size: 1.3rem; font-weight: 800; letter-spacing: -.01em; }
+.wh-top small {
+    display: block;
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--w-muted);
+    margin-bottom: 1px;
 }
-.wh-top h1 { font-size: 1.15rem; }
-.wh-card {
-    background: #fff; border-radius: 14px; border: 1px solid #e8eaed;
-    padding: 14px; margin-bottom: 10px;
+.wh-back:focus-visible,
+.wh-copy:focus-visible { outline: 3px solid var(--w-teal-500); outline-offset: 2px; }
+
+/* ---------- Section headings ---------- */
+.wh-section {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 22px 4px 10px;
 }
+.wh-section h2 { margin: 0; font-size: 1rem; font-weight: 800; }
+.wh-section span { font-size: .8rem; font-weight: 600; color: var(--w-muted); }
+
+/* ---------- Voucher ticket ---------- */
+.wh-ticket {
+    position: relative;
+    margin-bottom: 12px;
+    background: var(--w-surface);
+    border: 1px solid var(--w-line);
+    border-radius: 20px;
+    box-shadow: var(--w-shadow);
+}
+.wh-ticket-main { padding: 16px 16px 14px; }
 .wh-code {
-    font-family: ui-monospace, monospace; font-size: 1.1rem; font-weight: 800;
-    letter-spacing: .04em; color: #0f766e; word-break: break-all;
+    margin-top: 8px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 1.35rem;
+    font-weight: 800;
+    letter-spacing: .06em;
+    color: var(--w-teal-700);
+    word-break: break-all;
+    user-select: all;
 }
-.wh-meta { font-size: .8rem; color: #64748b; margin-top: 6px; line-height: 1.45; }
+@media (prefers-color-scheme: dark) {
+    .wh-code { color: var(--w-teal-500); }
+}
+
+/* perforation */
+.wh-ticket-foot {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 16px 12px;
+    border-top: 2px dashed var(--w-line);
+}
+.wh-ticket-foot::before,
+.wh-ticket-foot::after {
+    content: "";
+    position: absolute;
+    top: -11px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--w-bg);
+    border: 1px solid var(--w-line);
+}
+.wh-ticket-foot::before { left: -11px; clip-path: inset(0 0 0 50%); }
+.wh-ticket-foot::after  { right: -11px; clip-path: inset(0 50% 0 0); }
+
+.wh-copy {
+    flex-shrink: 0;
+    min-height: 40px;
+    padding: 0 14px;
+    border: none;
+    border-radius: 999px;
+    background: var(--w-teal-100);
+    color: var(--w-teal-700);
+    font-size: .82rem;
+    font-weight: 800;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.wh-copy svg { width: 16px; height: 16px; }
+@media (prefers-color-scheme: dark) {
+    .wh-copy { color: var(--w-teal-500); }
+}
+
+/* ---------- Meta ---------- */
+.wh-meta { font-size: .84rem; line-height: 1.5; color: var(--w-muted); }
+.wh-meta strong { color: var(--w-text); font-weight: 700; }
+.wh-date { font-size: .8rem; color: var(--w-muted); }
+
+/* ---------- Purchase card ---------- */
+.wh-card {
+    margin-bottom: 10px;
+    padding: 14px 16px;
+    background: var(--w-surface);
+    border: 1px solid var(--w-line);
+    border-radius: 18px;
+}
+.wh-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+.wh-price {
+    font-size: 1.05rem;
+    font-weight: 800;
+    white-space: nowrap;
+    color: var(--w-text);
+}
+.wh-price small { font-size: .7rem; font-weight: 700; color: var(--w-muted); }
+.wh-ref {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: .8rem;
+    color: var(--w-text);
+    word-break: break-all;
+}
+.wh-fail {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: .82rem;
+    line-height: 1.4;
+    background: #fde4e4;
+    color: #a61b1b;
+}
+@media (prefers-color-scheme: dark) {
+    .wh-fail { background: #3b1616; color: #fca5a5; }
+}
+
+/* ---------- Badges ---------- */
 .wh-badge {
-    display: inline-flex; align-items: center; gap: 4px;
-    font-size: .7rem; font-weight: 700;
-    padding: 3px 8px; border-radius: 999px; margin-bottom: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px 4px 8px;
+    border-radius: 999px;
+    font-size: .76rem;
+    font-weight: 800;
 }
-.wh-badge svg {
-    width: 12px; height: 12px; stroke: currentColor; fill: none;
-    stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
+.wh-badge svg { width: 13px; height: 13px; stroke-width: 2.8; }
+.wh-badge.ok   { background: #dcf7ef; color: #0b6a5f; }
+.wh-badge.wait { background: #fff1d6; color: #9a4a00; }
+.wh-badge.fail { background: #fde4e4; color: #a61b1b; }
+@media (prefers-color-scheme: dark) {
+    .wh-badge.ok   { background: #11332f; color: #6ee7d3; }
+    .wh-badge.wait { background: #3a2c0e; color: #fcc766; }
+    .wh-badge.fail { background: #3b1616; color: #fca5a5; }
 }
-.wh-badge.ok { background: #ecfdf5; color: #0f766e; }
-.wh-badge.wait { background: #fffbeb; color: #b45309; }
-.wh-badge.fail { background: #fef2f2; color: #b91c1c; }
-.wh-empty { text-align: center; color: #94a3b8; padding: 40px 10px; }
-.wh-section { font-size: .75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase;
-    letter-spacing: .06em; margin: 18px 0 8px; }
+
+/* ---------- Empty states ---------- */
+.wh-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 26px 16px;
+    text-align: center;
+    border: 1.5px dashed var(--w-line);
+    border-radius: 18px;
+    color: var(--w-muted);
+    font-size: .9rem;
+    line-height: 1.4;
+}
+.wh-empty svg { width: 28px; height: 28px; opacity: .7; }
+.wh-empty a {
+    margin-top: 6px;
+    display: inline-flex; align-items: center;
+    min-height: 40px;
+    padding: 0 16px;
+    border-radius: 999px;
+    background: var(--w-teal-700);
+    color: #fff;
+    font-weight: 800;
+    font-size: .85rem;
+    text-decoration: none;
+}
 </style>
 
 <div class="wh-wrap">
     <div class="wh-top">
         <a href="{{ url_for('wifi_home') }}" class="wh-back" aria-label="Rudi">
-            <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
         </a>
-        <h1>Historia ya WiFi</h1>
+        <div>
+            <small>WiFi Vocha</small>
+            <h1>Historia yangu</h1>
+        </div>
     </div>
 
-    <div class="wh-section">Vocha zilizopokelewa</div>
+    <div class="wh-section">
+        <h2>Vocha zangu</h2>
+        {% if vouchers %}<span>{{ vouchers|length }}</span>{% endif %}
+    </div>
+
     {% if vouchers %}
         {% for v in vouchers %}
-        <div class="wh-card">
-            <span class="wh-badge ok">
-                <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
-                IMEPOKELEWA
-            </span>
-            <div class="wh-code">{{ v.code }}</div>
-            <div class="wh-meta">
-                {{ v.package_name or '—' }} · {{ v.location|title }} · {{ "{:,}".format(v.price) }} TZS<br>
-                {% if v.used_at %}{{ v.used_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+        <div class="wh-ticket">
+            <div class="wh-ticket-main">
+                <span class="wh-badge ok">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+                    Imepokelewa
+                </span>
+                <div class="wh-code">{{ v.code }}</div>
+            </div>
+            <div class="wh-ticket-foot">
+                <div class="wh-meta">
+                    <strong>{{ v.package_name or '—' }}</strong> · {{ v.location|title }}<br>
+                    {{ "{:,}".format(v.price) }} TZS{% if v.used_at %} · {{ v.used_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+                </div>
+                <button type="button" class="wh-copy" data-code="{{ v.code }}">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <span>Nakili</span>
+                </button>
             </div>
         </div>
         {% endfor %}
     {% else %}
-        <div class="wh-empty">Bado huna vocha. Nunua kutoka WiFi.</div>
+        <div class="wh-empty">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/></svg>
+            Bado huna vocha.
+            <a href="{{ url_for('wifi_home') }}">Nunua vocha ya WiFi</a>
+        </div>
     {% endif %}
 
-    <div class="wh-section">Maombi ya malipo</div>
+    <div class="wh-section">
+        <h2>Maombi ya malipo</h2>
+        {% if purchases %}<span>{{ purchases|length }}</span>{% endif %}
+    </div>
+
     {% if purchases %}
         {% for p in purchases %}
         <div class="wh-card">
-            {% if p.status == 'paid' %}
-            <span class="wh-badge ok">
-                <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
-                IMELIPWA
-            </span>
-            {% elif p.status == 'awaiting_payment' %}
-            <span class="wh-badge wait">
-                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                INASUBIRI MALIPO
-            </span>
-            {% else %}
-            <span class="wh-badge fail">
-                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
-                IMESHINDWA
-            </span>
-            {% endif %}
-            <div class="wh-meta">
-                <strong>{{ p.package_name }}</strong> · {{ p.location|title }} · {{ "{:,}".format(p.price) }} TZS<br>
-                Ref: {{ p.order_reference or '—' }}<br>
-                {% if p.created_at %}{{ p.created_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
-                {% if p.fail_reason %}<br><span style="color:#b91c1c">{{ p.fail_reason }}</span>{% endif %}
+            <div class="wh-card-head">
+                {% if p.status == 'paid' %}
+                <span class="wh-badge ok">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
+                    Imelipwa
+                </span>
+                {% elif p.status == 'awaiting_payment' %}
+                <span class="wh-badge wait">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                    Inasubiri malipo
+                </span>
+                {% else %}
+                <span class="wh-badge fail">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+                    Imeshindwa
+                </span>
+                {% endif %}
+                <div class="wh-price">{{ "{:,}".format(p.price) }} <small>TZS</small></div>
             </div>
+            <div class="wh-meta">
+                <strong>{{ p.package_name }}</strong> · {{ p.location|title }}<br>
+                Ref: <span class="wh-ref">{{ p.order_reference or '—' }}</span>
+                {% if p.created_at %}<br><span class="wh-date">{{ p.created_at.strftime('%d/%m/%Y %H:%M') }}</span>{% endif %}
+            </div>
+            {% if p.fail_reason %}<div class="wh-fail">{{ p.fail_reason }}</div>{% endif %}
         </div>
         {% endfor %}
     {% else %}
-        <div class="wh-empty" style="padding:16px">Hakuna maombi bado.</div>
+        <div class="wh-empty">Hakuna maombi ya malipo bado.</div>
     {% endif %}
 </div>
+
+<script>
+document.querySelectorAll('.wh-copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        var code = btn.getAttribute('data-code');
+        var label = btn.querySelector('span');
+        function done() {
+            label.textContent = 'Imenakiliwa';
+            setTimeout(function () { label.textContent = 'Nakili'; }, 1800);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code).then(done, function () {});
+        } else {
+            var t = document.createElement('textarea');
+            t.value = code;
+            document.body.appendChild(t);
+            t.select();
+            try { document.execCommand('copy'); done(); } catch (e) {}
+            document.body.removeChild(t);
+        }
+    });
+});
+</script>
 {% endblock %}
