@@ -293,7 +293,11 @@
         <label class="field-label" for="package_key">Kifurushi</label>
         <select id="package_key" name="package_key" required>
             {% for p in packages %}
-            <option value="{{ p.key }}">{{ p.name }} — {{ "{:,}".format(p.price) }} TZS</option>
+            <option value="{{ p.key }}"
+                    data-label="{{ p.name }} — {{ "{:,}".format(p.price) }} TZS"
+                    {% for loc in locations %}data-{{ loc }}="{{ (stock or {}).get(loc, {}).get(p.key, 0) }}" {% endfor %}>
+                {{ p.name }} — {{ "{:,}".format(p.price) }} TZS
+            </option>
             {% endfor %}
         </select>
 
@@ -305,14 +309,31 @@
 </div>
 
 <script>
+function refreshStock() {
+    var checked = document.querySelector('.loc-pill input:checked');
+    var loc = checked ? checked.value : 'mwandoya';
+    var sel = document.getElementById('package_key');
+    var firstOk = null;
+    Array.prototype.forEach.call(sel.options, function (o) {
+        var n = parseInt(o.getAttribute('data-' + loc) || '0', 10);
+        o.textContent = o.getAttribute('data-label') + (n < 1 ? ' — imeisha' : ' (zipo ' + n + ')');
+        o.disabled = n < 1;
+        if (n >= 1 && !firstOk) firstOk = o;
+    });
+    if (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].disabled && firstOk) {
+        sel.value = firstOk.value;
+    }
+}
 document.querySelectorAll('.loc-pill input').forEach(function (r) {
     r.addEventListener('change', function () {
         document.querySelectorAll('.loc-pill').forEach(function (l) {
             l.classList.remove('active');
         });
         if (r.checked) r.parentElement.classList.add('active');
+        refreshStock();
     });
 });
+refreshStock();
 
 (function () {
     var btn = document.getElementById('wpan-copy');
