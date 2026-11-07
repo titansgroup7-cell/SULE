@@ -1,105 +1,248 @@
 {% extends "base.html" %}
-{% block title %}Agiza WiFi — Ufungaji{% endblock %}
+{% block title %}Agiza {{ label }}{% endblock %}
 {% block content %}
+
 <style>
-.wi-wrap { max-width: 520px; margin: 0 auto; padding: 14px 14px calc(90px + env(safe-area-inset-bottom, 0px)); }
+.wi-wrap {
+    max-width: 520px;
+    margin: auto;
+    padding: 14px 14px 90px;
+}
+
 .wi-hero {
-    background: linear-gradient(135deg, #0f766e 0%, #0d9488 55%, #14b8a6 100%);
-    border-radius: 16px; padding: 16px 16px; color: #fff; margin-bottom: 14px;
-    box-shadow: 0 6px 18px rgba(13,148,136,.28);
+    background: linear-gradient(135deg, #0f766e, #14b8a6);
+    border-radius: 16px;
+    padding: 18px;
+    color: white;
+    margin-bottom: 14px;
+    box-shadow: 0 5px 16px rgba(13,148,136,.2);
 }
-.wi-hero h1 { margin: 0 0 4px; font-size: 1.2rem; font-weight: 800; }
-.wi-hero p { margin: 0; font-size: .86rem; opacity: .95; line-height: 1.4; }
+
+.wi-hero h1 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 800;
+}
+
+.wi-hero p {
+    margin: 5px 0 0;
+    font-size: .85rem;
+}
+
+.wi-price-tag {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 6px 12px;
+    background: rgba(255,255,255,.18);
+    border-radius: 999px;
+    font-size: .82rem;
+    font-weight: 800;
+}
+
 .wi-card {
-    background: #fff; border: 1px solid #e5eeec; border-radius: 16px;
-    padding: 16px; box-shadow: 0 2px 10px rgba(6,78,72,.06);
+    background: white;
+    border: 1px solid #e5eeec;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 3px 12px rgba(0,0,0,.05);
 }
+
 .wi-card label {
-    display: block; font-size: .78rem; font-weight: 700; color: #5b6b68;
-    margin: 12px 0 6px;
+    display: block;
+    margin: 13px 0 6px;
+    font-size: .8rem;
+    font-weight: 700;
+    color: #334b47;
 }
-.wi-card label:first-of-type { margin-top: 0; }
-.wi-card .req { color: #dc2626; }
-.wi-card input, .wi-card textarea, .wi-card select {
-    width: 100%; box-sizing: border-box; border: 1px solid #dfe7e5;
-    background: #f6f9f8; border-radius: 12px; padding: 12px 12px;
-    font-size: 1rem; color: #0f1f1d; outline: none;
+
+.wi-card label:first-child {
+    margin-top: 0;
 }
-.wi-card input:focus, .wi-card textarea:focus, .wi-card select:focus {
-    border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,.18);
+
+.req {
+    color: #dc2626;
 }
-.wi-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.wi-card input,
+.wi-card textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px;
+    border: 1px solid #dce7e4;
+    border-radius: 11px;
+    background: #f7faf9;
+    color: #102b27;
+    font-size: 16px;
+    outline: none;
+}
+
+.wi-card input:focus,
+.wi-card textarea:focus {
+    border-color: #14b8a6;
+    box-shadow: 0 0 0 3px rgba(20,184,166,.12);
+}
+
+.wi-grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.wi-error {
+    display: none;
+    color: #dc2626;
+    font-size: .78rem;
+    margin-top: 5px;
+    font-weight: 600;
+}
+
 .wi-card button {
-    width: 100%; margin-top: 18px; border: 0; border-radius: 14px;
-    padding: 14px 16px; font-size: 1rem; font-weight: 800; color: #fff;
-    background: linear-gradient(135deg, #0f766e, #14b8a6); cursor: pointer;
+    width: 100%;
+    margin-top: 20px;
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #0f766e, #14b8a6);
+    color: white;
+    font-size: 1rem;
+    font-weight: 800;
+    cursor: pointer;
 }
-.wi-card button:active { transform: scale(.98); }
-.wi-note { margin-top: 12px; font-size: .8rem; color: #5b6b68; line-height: 1.4; }
-.wi-brands { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.wi-brands span {
-    background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28);
-    border-radius: 999px; padding: 4px 10px; font-size: .75rem; font-weight: 700;
+
+.wi-card button:active {
+    transform: scale(.98);
+}
+
+.wi-back {
+    display: inline-block;
+    margin-bottom: 10px;
+    font-size: .85rem;
+    font-weight: 700;
+    color: #0f766e;
+    text-decoration: none;
+}
+
+@media(max-width:360px) {
+    .wi-grid2 {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    .wi-card { background: #142522; border-color: #263c37; }
+    .wi-card label { color: #c5ddd8; }
+    .wi-card input, .wi-card textarea {
+        background: #0f1c1a;
+        border-color: #263c37;
+        color: #e5f5f1;
+    }
 }
 </style>
 
 <div class="wi-wrap">
+
+    <a class="wi-back" href="{{ url_for('wifi_install') }}">← Badilisha mtandao</a>
+
     <div class="wi-hero">
-        <h1>Agiza WiFi</h1>
-        <p>Jaza fomu ili uombe ufungaji wa WiFi. Ombi litapelekwa kwa admin.</p>
-        <div class="wi-brands">
-            <span>MWANDOYA Wi-Fi</span>
-            <span>DOME Wi-Fi</span>
-        </div>
+        <h1>Agiza {{ label }}</h1>
+        <p>Jaza taarifa zako. Baada ya kutuma utaelekezwa kulipa.</p>
+        <div class="wi-price-tag">Bei: TSh {{ "{:,}".format(amount) }} (bando la kwanza)</div>
     </div>
 
-    <form method="POST" class="wi-card" autocomplete="on">
+    <form method="POST" class="wi-card" autocomplete="on" id="wifiForm">
+
         <label for="full_name">Majina Matatu <span class="req">*</span></label>
-        <input id="full_name" name="full_name" type="text" required
-               placeholder="Jina la kwanza, kati, mwisho"
-               value="">
+        <input id="full_name" name="full_name" type="text"
+               required placeholder="Majina yako matatu">
 
         <label for="nida_number">Namba ya NIDA <span class="req">*</span></label>
-        <input id="nida_number" name="nida_number" type="text" required
-               placeholder="Mfano: 1990xxxxxxxxxxxx" inputmode="numeric">
+        <input id="nida_number" name="nida_number"
+               type="text" required
+               inputmode="numeric"
+               maxlength="20"
+               placeholder="Namba ya NIDA (herufi 20)">
+        <div id="nidaError" class="wi-error">NIDA si sahihi. Lazima iwe namba 20.</div>
 
         <label for="email">Gmail / Barua pepe <span class="req">*</span></label>
-        <input id="email" name="email" type="email" required
-               placeholder="mfano@gmail.com"
+        <input id="email" name="email" type="email"
+               required placeholder="mfano@gmail.com"
                value="{{ current_user.email if current_user and current_user.email else '' }}">
 
-        <label for="phone">Namba ya mawasiliano <span class="req">*</span></label>
-        <input id="phone" name="phone" type="tel" required
-               placeholder="07XXXXXXXX"
+        <label for="phone">Namba ya Simu <span class="req">*</span></label>
+        <input id="phone" name="phone" type="tel"
+               required placeholder="07XXXXXXXX"
                value="{{ current_user.phone if current_user and current_user.phone else '' }}">
-
-        <label for="install_location">Location ya WiFi kufika <span class="req">*</span></label>
-        <textarea id="install_location" name="install_location" rows="2" required
-                  placeholder="Anwani kamili / jina la eneo / karibu na..."></textarea>
 
         <div class="wi-grid2">
             <div>
                 <label for="region">Mkoa <span class="req">*</span></label>
-                <input id="region" name="region" type="text" required placeholder="Mfano: Mwanza">
+                <input id="region" name="region" required
+                       placeholder="Mkoa">
             </div>
+
             <div>
                 <label for="district">Wilaya <span class="req">*</span></label>
-                <input id="district" name="district" type="text" required placeholder="Mfano: Nyamagana">
-            </div>
-        </div>
-        <div class="wi-grid2">
-            <div>
-                <label for="ward">Kata <span class="req">*</span></label>
-                <input id="ward" name="ward" type="text" required placeholder="Kata">
-            </div>
-            <div>
-                <label for="village">Kijiji / Mtaa <span class="req">*</span></label>
-                <input id="village" name="village" type="text" required placeholder="Kijiji au mtaa">
+                <input id="district" name="district" required
+                       placeholder="Wilaya">
             </div>
         </div>
 
-        <button type="submit">Tuma ombi kwa Admin</button>
-        <p class="wi-note">Baada ya kutuma, admin atapokea taarifa na atawasiliana nawe kuhusu ufungaji wa MWANDOYA Wi-Fi au DOME Wi-Fi.</p>
+        <div class="wi-grid2">
+            <div>
+                <label for="ward">Kata <span class="req">*</span></label>
+                <input id="ward" name="ward" required
+                       placeholder="Kata">
+            </div>
+
+            <div>
+                <label for="village">Kijiji / Mtaa <span class="req">*</span></label>
+                <input id="village" name="village" required
+                       placeholder="Kijiji / Mtaa">
+            </div>
+        </div>
+
+        <button type="submit">Endelea → Lipa TSh {{ "{:,}".format(amount) }}</button>
+
     </form>
 </div>
+
+<script>
+const nidaInput = document.getElementById("nida_number");
+const nidaError = document.getElementById("nidaError");
+const wifiForm = document.getElementById("wifiForm");
+
+function validateNida() {
+    const nida = nidaInput.value.trim();
+
+    const valid = /^\d{20}$/.test(nida) &&
+                  Number(nida.substring(0, 4)) >= 1930 &&
+                  Number(nida.substring(0, 4)) <= 2025;
+
+    nidaError.style.display = valid ? "none" : "block";
+    nidaInput.style.borderColor = valid ? "#14b8a6" : "#dc2626";
+
+    return valid;
+}
+
+nidaInput.addEventListener("input", function() {
+    this.value = this.value.replace(/\D/g, "").slice(0, 20);
+
+    if (this.value.length === 20) {
+        validateNida();
+    } else {
+        nidaError.style.display = "none";
+        nidaInput.style.borderColor = "#dce7e4";
+    }
+});
+
+wifiForm.addEventListener("submit", function(event) {
+    if (!validateNida()) {
+        event.preventDefault();
+        nidaError.style.display = "block";
+        nidaInput.focus();
+    }
+});
+</script>
+
 {% endblock %}

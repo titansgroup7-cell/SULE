@@ -352,6 +352,19 @@ WIFI_LOCATION_LABELS = {
     "mwanza": "DOME Wi-Fi",
 }
 
+# Bei za kuagiza WiFi (bando la kwanza la mwezi)
+WIFI_INSTALL_NETWORKS = ("VODACOM", "AIRTEL", "YAS")
+WIFI_INSTALL_PRICES = {
+    "VODACOM": 130000,
+    "AIRTEL": 70000,
+    "YAS": 180000,
+}
+WIFI_INSTALL_LABELS = {
+    "VODACOM": "Vodacom WiFi",
+    "AIRTEL": "Airtel WiFi",
+    "YAS": "Yas WiFi",
+}
+
 def wifi_location_label(location):
     key = (location or "").lower().strip()
     return WIFI_LOCATION_LABELS.get(key, (location or "").title() or "WiFi")
@@ -407,12 +420,18 @@ class WifiInstallRequest(db.Model):
     nida_number = db.Column(db.String(30), default="")
     email = db.Column(db.String(120), default="")
     phone = db.Column(db.String(20), nullable=False)
-    install_location = db.Column(db.String(255), default="")  # anwani / sehemu ya kufunga
+    network = db.Column(db.String(30), default="")  # VODACOM | AIRTEL | YAS
+    amount = db.Column(db.Integer, default=0)  # bei ya ufungaji + bando la kwanza
+    payment_phone = db.Column(db.String(20), default="")
+    order_reference = db.Column(db.String(60), default="", index=True)
+    paid_at = db.Column(db.DateTime, nullable=True)
+    fail_reason = db.Column(db.String(200), default="")
     region = db.Column(db.String(80), default="")
     district = db.Column(db.String(80), default="")
     ward = db.Column(db.String(80), default="")
     village = db.Column(db.String(80), default="")
-    status = db.Column(db.String(30), default="pending", index=True)  # pending | contacted | completed | rejected
+    # awaiting_payment | payment_failed | pending | contacted | completed | rejected
+    status = db.Column(db.String(30), default="awaiting_payment", index=True)
     admin_note = db.Column(db.Text, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship("User", backref=db.backref("wifi_install_requests", lazy=True))
@@ -1651,6 +1670,22 @@ def _parse_agency_pay_ref(order_ref):
     return None
 
 
+def _parse_winst_pay_ref(order_ref):
+    """WINST{id}T{timestamp} -> WifiInstallRequest au None."""
+    ref = (order_ref or "").strip()
+    if not ref.upper().startswith("WINST"):
+        return None
+    try:
+        rest = ref[5:]
+        part = rest.split("T")[0].split("t")[0].split("-")[0]
+        rid = int("".join(ch for ch in part if ch.isdigit()) or "0")
+        if rid:
+            return WifiInstallRequest.query.get(rid)
+    except Exception:
+        return None
+    return None
+
+
 def _mark_payment_success(merchant_ref, extra=""):
     """Thibitisha malipo yaliyofanikiwa kwa ORD... | NKR... | WIFI..."""
     merchant_ref = (merchant_ref or "").strip()
@@ -1699,6 +1734,33 @@ def _mark_payment_success(merchant_ref, extra=""):
                     print(f"wifi pay push: {e}")
             return True, "wifi"
         return False, "wifi not found"
+
+    # WiFi Install (Agiza WiFi) — baada ya malipo ombi linaenda kwa admin
+    winst = _parse_winst_pay_ref(merchant_ref)
+    if winst:
+        if winst.status in ("awaiting_payment", "payment_failed"):
+            winst.status = "pending"
+            winst.fail_reason = ""
+            winst.paid_at = datetime.utcnow()
+            db.session.commit()
+            try:
+                send_push_to_admins(
+                    "Ombi jipya la kuagiza WiFi",
+                    f"{winst.full_name} · {winst.network} · TSh {int(winst.amount or 0):,} · {winst.region}/{winst.district}",
+                    url=url_for("admin_wifi_install"),
+                    tag=f"wifi-install-{winst.id}",
+                )
+                if winst.user_id:
+                    send_push_to_user(
+                        winst.user_id,
+                        "Malipo yamepokelewa",
+                        f"Ombi lako la {winst.network} WiFi limetumwa kwa admin. Tutawasiliana nawe.",
+                        url="/wifi",
+                        tag=f"winst-ok-{winst.id}",
+                    )
+            except Exception as e:
+                print(f"winst pay push: {e}")
+        return True, "winst"
 
     # Agency — ada ya huduma imelipwa => ombi (na documents) sasa linaonekana kwa admin
     agency_app = _parse_agency_pay_ref(merchant_ref)
@@ -1815,6 +1877,25 @@ def _mark_payment_failed(merchant_ref, reason="Malipo yameshindwa."):
                     print(f"wifi fail push: {e}")
             return True, "wifi"
         return False, "wifi not found"
+
+    winst = _parse_winst_pay_ref(merchant_ref)
+    if winst:
+        if winst.status == "awaiting_payment":
+            winst.status = "payment_failed"
+            winst.fail_reason = reason
+            db.session.commit()
+            try:
+                if winst.user_id:
+                    send_push_to_user(
+                        winst.user_id,
+                        "Malipo ya Agiza WiFi yameshindwa",
+                        f"{winst.network}: {reason}. Jaribu kulipa tena.",
+                        url=url_for("wifi_install_pay", req_id=winst.id),
+                        tag=f"winst-fail-{winst.id}",
+                    )
+            except Exception as e:
+                print(f"winst fail push: {e}")
+        return True, "winst"
 
     agency_app = _parse_agency_pay_ref(merchant_ref)
     if agency_app:
@@ -4446,6 +4527,23 @@ def ensure_agency_columns():
                     print("✓ nakala_request.license_type widened to 200")
             except Exception as e2:
                 print(f"license_type widen note: {e2}")
+
+        # WiFi Install Request — network, amount, payment fields
+        if "wifi_install_request" in tables:
+            existing_w = {c["name"] for c in insp.get_columns("wifi_install_request")}
+            winst_cols = {
+                "network": "VARCHAR(30) DEFAULT ''",
+                "amount": "INTEGER DEFAULT 0",
+                "payment_phone": "VARCHAR(20) DEFAULT ''",
+                "order_reference": "VARCHAR(60) DEFAULT ''",
+                "paid_at": "TIMESTAMP",
+                "fail_reason": "VARCHAR(200) DEFAULT ''",
+            }
+            with db.engine.begin() as conn:
+                for name, typedef in winst_cols.items():
+                    if name not in existing_w:
+                        conn.execute(text(f"ALTER TABLE wifi_install_request ADD COLUMN {name} {typedef}"))
+                        print(f"✓ Added column wifi_install_request.{name}")
     except Exception as e:
         print(f"ensure_agency_columns warning: {e}")
 
@@ -4497,17 +4595,36 @@ def wifi_home():
     return render_template("wifi.html", show_panel=show_panel, packages=WIFI_PACKAGES)
 
 
-@app.route("/wifi/agiza", methods=["GET", "POST"])
+@app.route("/wifi/agiza", methods=["GET"])
 @login_required
 def wifi_install():
-    """Fomu ya kuagiza WiFi — inatumwa kwa admin."""
+    """Chagua mtandao wa WiFi (VODACOM / AIRTEL / YAS)."""
+    return render_template(
+        "wifi_install_select.html",
+        networks=WIFI_INSTALL_NETWORKS,
+        prices=WIFI_INSTALL_PRICES,
+        labels=WIFI_INSTALL_LABELS,
+    )
+
+
+@app.route("/wifi/agiza/<network>", methods=["GET", "POST"])
+@login_required
+def wifi_install_form(network):
+    """Fomu ya kuagiza WiFi baada ya kuchagua mtandao."""
     user = get_current_user()
+    network = (network or "").strip().upper()
+    if network not in WIFI_INSTALL_PRICES:
+        flash("Chagua mtandao sahihi.", "error")
+        return redirect(url_for("wifi_install"))
+
+    amount = WIFI_INSTALL_PRICES[network]
+    label = WIFI_INSTALL_LABELS.get(network, network)
+
     if request.method == "POST":
         full_name = (request.form.get("full_name") or "").strip()
         nida_number = (request.form.get("nida_number") or "").strip()
         email = (request.form.get("email") or "").strip()
         phone = (request.form.get("phone") or "").strip()
-        install_location = (request.form.get("install_location") or "").strip()
         region = (request.form.get("region") or "").strip()
         district = (request.form.get("district") or "").strip()
         ward = (request.form.get("ward") or "").strip()
@@ -4515,49 +4632,122 @@ def wifi_install():
 
         if not full_name or not phone:
             flash("Jaza majina matatu na namba ya mawasiliano.", "error")
-            return redirect(url_for("wifi_install"))
+            return redirect(url_for("wifi_install_form", network=network))
         if not nida_number:
             flash("Weka namba ya NIDA.", "error")
-            return redirect(url_for("wifi_install"))
+            return redirect(url_for("wifi_install_form", network=network))
         if not email or "@" not in email:
             flash("Weka Gmail / barua pepe sahihi.", "error")
-            return redirect(url_for("wifi_install"))
-        if not install_location:
-            flash("Eleza location ya WiFi kufika.", "error")
-            return redirect(url_for("wifi_install"))
+            return redirect(url_for("wifi_install_form", network=network))
         if not region or not district or not ward or not village:
             flash("Jaza mkoa, wilaya, kata na kijiji.", "error")
-            return redirect(url_for("wifi_install"))
+            return redirect(url_for("wifi_install_form", network=network))
 
         phone_n = normalize_phone(phone) if phone else phone
+        order_ref = f"WINST{int(datetime.utcnow().timestamp())}{secrets.token_hex(2).upper()}"
         req = WifiInstallRequest(
             user_id=user.id if user else None,
             full_name=full_name,
             nida_number=nida_number,
             email=email,
             phone=phone_n or phone,
-            install_location=install_location,
+            network=network,
+            amount=amount,
+            order_reference=order_ref,
             region=region,
             district=district,
             ward=ward,
             village=village,
-            status="pending",
+            status="awaiting_payment",
         )
         db.session.add(req)
         db.session.commit()
-        try:
-            send_push_to_admins(
-                "Ombi jipya la kuagiza WiFi",
-                f"{full_name} · {phone_n or phone} · {region}/{district}",
-                url=url_for("admin_wifi_install"),
-                tag=f"wifi-install-{req.id}",
-            )
-        except Exception as e:
-            print(f"wifi install push: {e}")
-        flash("Ombi lako la kuagiza WiFi limetumwa kwa admin. Tutawasiliana nawe hivi karibuni.", "success")
+        return redirect(url_for("wifi_install_pay", req_id=req.id))
+
+    return render_template(
+        "wifi_install.html",
+        network=network,
+        amount=amount,
+        label=label,
+        current_user=user,
+    )
+
+
+@app.route("/wifi/agiza/pay/<int:req_id>", methods=["GET", "POST"])
+@login_required
+def wifi_install_pay(req_id):
+    """Lipa ada ya ufungaji wa WiFi (ClickPesa) — baada ya malipo ombi linaenda kwa admin."""
+    user = get_current_user()
+    req = WifiInstallRequest.query.get_or_404(req_id)
+    if req.user_id and req.user_id != user.id and not user.is_admin:
+        flash("Huna ruhusa.", "error")
         return redirect(url_for("wifi_install"))
 
-    return render_template("wifi_install.html")
+    if req.status not in ("awaiting_payment", "payment_failed"):
+        flash("Ombi hili tayari limetumwa.", "info")
+        return redirect(url_for("wifi_install"))
+
+    amount = int(req.amount or WIFI_INSTALL_PRICES.get(req.network, 0))
+    label = WIFI_INSTALL_LABELS.get(req.network, req.network or "WiFi")
+
+    if request.method == "POST":
+        payment_phone = (request.form.get("payment_phone") or "").strip()
+        if not payment_phone:
+            flash("Weka namba ya kulipia.", "error")
+            return redirect(url_for("wifi_install_pay", req_id=req.id))
+
+        phone_n = normalize_phone(payment_phone)
+        # unique order ref for each attempt
+        order_ref = f"WINST{req.id}T{int(datetime.utcnow().timestamp())}"
+        req.payment_phone = phone_n
+        req.order_reference = order_ref
+        req.fail_reason = ""
+        db.session.commit()
+
+        if clickpesa_enabled() and amount > 0:
+            try:
+                ok, data = initiate_clickpesa_ussd(amount, order_ref, phone_n)
+                if ok:
+                    flash("Ombi la malipo limetumwa kwenye simu yako. Weka PIN kuthibitisha.", "success")
+                else:
+                    reason = clean_payment_error(data, "Malipo yameshindwa kuanzishwa.")
+                    req.status = "payment_failed"
+                    req.fail_reason = reason
+                    db.session.commit()
+                    flash(reason, "error")
+            except Exception as e:
+                reason = clean_payment_error(str(e), "Hitilafu ya malipo.")
+                req.status = "payment_failed"
+                req.fail_reason = reason
+                db.session.commit()
+                flash(f"Hitilafu ya malipo: {reason}", "error")
+        else:
+            # fallback: no clickpesa — mark pending for admin (dev)
+            req.status = "pending"
+            req.paid_at = datetime.utcnow()
+            db.session.commit()
+            try:
+                send_push_to_admins(
+                    "Ombi jipya la kuagiza WiFi (bila ClickPesa)",
+                    f"{req.full_name} · {req.network} · TSh {amount:,}",
+                    url=url_for("admin_wifi_install"),
+                    tag=f"wifi-install-{req.id}",
+                )
+            except Exception as e:
+                print(f"wifi install push: {e}")
+            flash("Ombi limetumwa. (ClickPesa haijawezeshwa)", "success")
+            return redirect(url_for("wifi_install"))
+
+        return redirect(url_for("wifi_install_pay", req_id=req.id))
+
+    return render_template(
+        "wifi_install_pay.html",
+        req=req,
+        amount=amount,
+        label=label,
+        default_phone=req.payment_phone or req.phone or (user.phone if user else ""),
+        last_fail=req.fail_reason if req.status == "payment_failed" else "",
+    )
 
 
 @app.route("/admin/wifi-install", methods=["GET", "POST"])
@@ -4581,7 +4771,14 @@ def admin_wifi_install():
             flash("Ombi limesasishwa.", "success")
         return redirect(url_for("admin_wifi_install"))
 
-    items = WifiInstallRequest.query.order_by(WifiInstallRequest.created_at.desc()).limit(200).all()
+    # Onyesha tu maombi yaliyolipiwa (baada ya ClickPesa webhook)
+    items = (
+        WifiInstallRequest.query
+        .filter(WifiInstallRequest.status.in_(["pending", "contacted", "completed", "rejected"]))
+        .order_by(WifiInstallRequest.created_at.desc())
+        .limit(200)
+        .all()
+    )
     pending = WifiInstallRequest.query.filter_by(status="pending").count()
     return render_template("admin_wifi_install.html", items=items, pending=pending)
 

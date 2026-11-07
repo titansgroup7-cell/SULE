@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Lipa — {{ label }}{% endblock %}
+{% block content %}
+
+<style>
+.wip-wrap { max-width: 480px; margin: auto; padding: 14px 14px 90px; }
+.wip-hero {
+    background: linear-gradient(135deg, #0f766e, #14b8a6);
+    border-radius: 16px; padding: 18px; color: white; margin-bottom: 14px;
+    box-shadow: 0 5px 16px rgba(13,148,136,.2);
+}
+.wip-hero h1 { margin: 0; font-size: 1.2rem; font-weight: 800; }
+.wip-hero p { margin: 5px 0 0; font-size: .84rem; opacity: .9; }
+.wip-fee {
+    background: #fff; border: 1px solid #e5eeec; border-radius: 16px;
+    padding: 16px; text-align: center; margin-bottom: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.04);
+}
+.wip-fee .t { font-size: .8rem; color: #667; font-weight: 700; }
+.wip-fee .amt { font-size: 1.6rem; font-weight: 900; color: #0f766e; margin-top: 4px; }
+.wip-fee .net { font-size: .85rem; color: #445; margin-top: 4px; font-weight: 700; }
+.wip-card {
+    background: #fff; border: 1px solid #e5eeec; border-radius: 16px;
+    padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.04);
+}
+.wip-card h3 { margin: 0 0 10px; font-size: .95rem; font-weight: 800; }
+.wip-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: .84rem; border-bottom: 1px solid #f0f5f3; }
+.wip-row:last-child { border-bottom: none; }
+.wip-row .l { color: #667; }
+.wip-row .v { font-weight: 700; text-align: right; }
+.wip-fail {
+    background: #fef2f2; color: #b91c1c; border-radius: 12px;
+    padding: 12px; margin-bottom: 12px; font-size: .84rem;
+}
+.wip-label { display: block; font-size: .8rem; font-weight: 700; margin-bottom: 6px; color: #334b47; }
+.wip-input {
+    width: 100%; box-sizing: border-box; padding: 12px;
+    border: 1px solid #dce7e4; border-radius: 11px; background: #f7faf9;
+    font-size: 16px; outline: none;
+}
+.wip-input:focus { border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,.12); }
+.wip-hint { font-size: .75rem; color: #778; margin: 6px 0 0; }
+.wip-steps { margin: 14px 0 0; padding-left: 18px; font-size: .8rem; color: #445; line-height: 1.55; }
+.wip-submit {
+    width: 100%; margin-top: 16px; padding: 14px; border: none; border-radius: 12px;
+    background: linear-gradient(135deg, #0f766e, #14b8a6); color: white;
+    font-size: 1rem; font-weight: 800; cursor: pointer;
+}
+.wip-submit:disabled { opacity: .7; }
+.wip-back { display: block; text-align: center; margin-top: 12px; color: #0f766e; font-weight: 700; font-size: .85rem; text-decoration: none; }
+@media (prefers-color-scheme: dark) {
+    .wip-fee, .wip-card { background: #142522; border-color: #263c37; }
+    .wip-fee .t, .wip-row .l { color: #9bb2ac; }
+    .wip-input { background: #0f1c1a; border-color: #263c37; color: #e5f5f1; }
+}
+</style>
+
+<div class="wip-wrap">
+    <div class="wip-hero">
+        <h1>Lipa ada ya ufungaji</h1>
+        <p>Baada ya malipo kuthibitishwa, ombi lako linaenda kwa admin.</p>
+    </div>
+
+    {% if last_fail %}
+    <div class="wip-fail"><strong>Malipo ya awali yameshindwa:</strong> {{ last_fail }}. Jaribu tena hapa chini.</div>
+    {% endif %}
+
+    <div class="wip-fee">
+        <div class="t">Kiasi cha kulipa</div>
+        <div class="amt">TSh {{ "{:,}".format(amount) }}</div>
+        <div class="net">{{ label }} · bando la mwezi wa kwanza</div>
+    </div>
+
+    <div class="wip-card">
+        <h3>Taarifa zako</h3>
+        <div class="wip-row"><span class="l">Jina</span><span class="v">{{ req.full_name }}</span></div>
+        <div class="wip-row"><span class="l">Mtandao</span><span class="v">{{ req.network }}</span></div>
+        <div class="wip-row"><span class="l">Simu</span><span class="v">{{ req.phone }}</span></div>
+        <div class="wip-row"><span class="l">Eneo</span><span class="v">{{ req.region }} / {{ req.district }} / {{ req.ward }}</span></div>
+        <div class="wip-row"><span class="l">Kijiji/Mtaa</span><span class="v">{{ req.village }}</span></div>
+    </div>
+
+    <form method="POST" class="wip-card" id="wipForm">
+        <h3>Malipo (ClickPesa)</h3>
+        <label class="wip-label" for="payment_phone">Namba ya kulipia (yenye hela)</label>
+        <input class="wip-input" id="payment_phone" type="tel" name="payment_phone"
+               inputmode="tel" autocomplete="tel"
+               value="{{ default_phone or '' }}"
+               placeholder="07XXXXXXXX au 06XXXXXXXX" required>
+        <p class="wip-hint">Unaweza kutumia namba ya mtandao wowote.</p>
+
+        <ol class="wip-steps">
+            <li>Bonyeza <strong>Lipa</strong>, ujumbe wa malipo utafika kwenye simu yako.</li>
+            <li>Weka PIN yako kuthibitisha.</li>
+            <li>Malipo yakithibitishwa (webhook), ombi linaenda kwa admin.</li>
+        </ol>
+
+        <button type="submit" class="wip-submit" id="wipBtn">Lipa TSh {{ "{:,}".format(amount) }}</button>
+        <a href="{{ url_for('wifi_install_form', network=req.network) }}" class="wip-back">← Rudi kwenye fomu</a>
+    </form>
+</div>
+
+<script>
+document.getElementById('wipForm').addEventListener('submit', function () {
+    var b = document.getElementById('wipBtn');
+    b.disabled = true;
+    b.textContent = 'Inatuma ombi la malipo...';
+});
+</script>
+
+{% endblock %}

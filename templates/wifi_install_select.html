@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Agiza WiFi — Chagua Mtandao{% endblock %}
+{% block content %}
+
+<style>
+.wis-wrap {
+    max-width: 480px;
+    margin: auto;
+    padding: 14px 14px 90px;
+}
+.wis-hero {
+    background: linear-gradient(135deg, #0f766e, #14b8a6);
+    border-radius: 18px;
+    padding: 20px 18px;
+    color: white;
+    margin-bottom: 16px;
+    box-shadow: 0 6px 18px rgba(13,148,136,.22);
+}
+.wis-hero h1 {
+    margin: 0;
+    font-size: 1.35rem;
+    font-weight: 850;
+}
+.wis-hero p {
+    margin: 6px 0 0;
+    font-size: .86rem;
+    opacity: .9;
+}
+.wis-heading {
+    font-size: 15px;
+    font-weight: 800;
+    margin: 0 2px 12px;
+    color: #142d2a;
+}
+.wis-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+.wis-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 14px;
+    background: #fff;
+    border: 1px solid #e8f0ee;
+    border-radius: 18px;
+    text-decoration: none;
+    color: inherit;
+    box-shadow: 0 3px 12px rgba(0,0,0,.05);
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+.wis-card:active {
+    transform: scale(.98);
+}
+.wis-logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    font-weight: 850;
+    font-size: 11px;
+    letter-spacing: .3px;
+    color: #fff;
+    text-transform: uppercase;
+}
+.vodacom-logo { background: linear-gradient(135deg, #e60000, #b30000); }
+.airtel-logo { background: linear-gradient(135deg, #ed1c24, #a0161c); }
+.yas-logo { background: linear-gradient(135deg, #5c2d91, #3a1a66); }
+.wis-body { flex: 1; min-width: 0; }
+.wis-body h3 {
+    margin: 0 0 3px;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -.3px;
+}
+.wis-body p {
+    margin: 0;
+    font-size: 12px;
+    color: #6b7f7b;
+}
+.wis-price {
+    font-size: 13px;
+    font-weight: 800;
+    color: #0f766e;
+    margin-top: 4px;
+}
+.wis-arrow {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: #f0faf8;
+    color: #0d9488;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+}
+.wis-arrow svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.wis-note {
+    margin-top: 16px;
+    padding: 12px 14px;
+    background: #f0faf8;
+    border-radius: 14px;
+    font-size: 12px;
+    color: #335;
+    line-height: 1.45;
+}
+@media (prefers-color-scheme: dark) {
+    .wis-heading { color: #e5f5f1; }
+    .wis-card { background: #142522; border-color: #263c37; }
+    .wis-body p { color: #9bb2ac; }
+    .wis-arrow { background: rgba(20,184,166,.15); }
+    .wis-note { background: #1a2e2b; color: #c5ddd8; }
+}
+</style>
+
+<div class="wis-wrap">
+    <div class="wis-hero">
+        <h1>Agiza WiFi</h1>
+        <p>Chagua mtandao wa WiFi unayotaka kuufunga. Bei inajumuisha bando la mwezi wa kwanza.</p>
+    </div>
+
+    <h2 class="wis-heading">Chagua aina ya WiFi</h2>
+
+    <div class="wis-grid">
+        <a href="{{ url_for('wifi_install_form', network='VODACOM') }}" class="wis-card">
+            <div class="wis-logo vodacom-logo">vodacom</div>
+            <div class="wis-body">
+                <h3>VODACOM</h3>
+                <p>WiFi ya Vodacom + bando la kwanza</p>
+                <div class="wis-price">TSh {{ "{:,}".format(prices['VODACOM']) }}</div>
+            </div>
+            <span class="wis-arrow">
+                <svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            </span>
+        </a>
+
+        <a href="{{ url_for('wifi_install_form', network='AIRTEL') }}" class="wis-card">
+            <div class="wis-logo airtel-logo">airtel</div>
+            <div class="wis-body">
+                <h3>AIRTEL</h3>
+                <p>WiFi ya Airtel + bando la kwanza</p>
+                <div class="wis-price">TSh {{ "{:,}".format(prices['AIRTEL']) }}</div>
+            </div>
+            <span class="wis-arrow">
+                <svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            </span>
+        </a>
+
+        <a href="{{ url_for('wifi_install_form', network='YAS') }}" class="wis-card">
+            <div class="wis-logo yas-logo">yas</div>
+            <div class="wis-body">
+                <h3>YAS</h3>
+                <p>WiFi ya Yas + bando la kwanza</p>
+                <div class="wis-price">TSh {{ "{:,}".format(prices['YAS']) }}</div>
+            </div>
+            <span class="wis-arrow">
+                <svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            </span>
+        </a>
+    </div>
+
+    <div class="wis-note">
+        <strong>Hatua:</strong> Chagua mtandao → Jaza taarifa → Lipa kupitia ClickPesa → Ombi linaenda kwa admin.
+    </div>
+</div>
+
+{% endblock %}

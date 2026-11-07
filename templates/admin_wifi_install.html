@@ -29,31 +29,44 @@
 }
 .awi-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
 .awi-top a { color: #0f766e; font-weight: 700; font-size: .85rem; }
+.net-tag {
+    display: inline-block; font-size: .72rem; font-weight: 800;
+    padding: 2px 8px; border-radius: 6px; margin-left: 6px; vertical-align: middle;
+}
+.net-vodacom { background: #fee2e2; color: #b91c1c; }
+.net-airtel { background: #fee2e2; color: #991b1b; }
+.net-yas { background: #ede9fe; color: #5b21b6; }
 </style>
 
 <div class="awi">
     <div class="awi-top">
         <div>
             <h1>Maombi ya Agiza WiFi</h1>
-            <div class="sub">Pending: <strong>{{ pending }}</strong></div>
+            <div class="sub">Pending (yaliyolipiwa): <strong>{{ pending }}</strong></div>
         </div>
         <a href="{{ url_for('admin_wifi') }}">← WiFi Admin</a>
     </div>
 
     {% if not items %}
-    <div class="awi-card">Hakuna maombi bado.</div>
+    <div class="awi-card">Hakuna maombi yaliyolipiwa bado.</div>
     {% endif %}
 
     {% for r in items %}
     <div class="awi-card">
-        <div class="name">{{ r.full_name }}</div>
+        <div class="name">
+            {{ r.full_name }}
+            {% if r.network %}
+            <span class="net-tag net-{{ r.network|lower }}">{{ r.network }}</span>
+            {% endif %}
+        </div>
         <div class="meta">
             <div>NIDA: {{ r.nida_number or '—' }}</div>
             <div>Gmail: {{ r.email or '—' }}</div>
             <div>Simu: {{ r.phone }}</div>
-            <div>Location: {{ r.install_location or '—' }}</div>
+            {% if r.amount %}<div>Kiasi: <strong>TSh {{ "{:,}".format(r.amount) }}</strong></div>{% endif %}
+            {% if r.payment_phone %}<div>Simu ya malipo: {{ r.payment_phone }}</div>{% endif %}
             <div>{{ r.region }} / {{ r.district }} / {{ r.ward }} / {{ r.village }}</div>
-            <div>{{ to_dar_es_salaam(r.created_at) }}</div>
+            <div>{{ to_dar_es_salaam(r.created_at) }}{% if r.paid_at %} · Lipwa: {{ to_dar_es_salaam(r.paid_at) }}{% endif %}</div>
             {% if r.admin_note %}<div>Note: {{ r.admin_note }}</div>{% endif %}
         </div>
         <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
