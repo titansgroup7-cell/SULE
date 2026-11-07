@@ -110,7 +110,6 @@
     border-radius: 20px;
     box-shadow: var(--w-shadow);
     overflow: hidden;
-    transition: border-color .2s ease;
 }
 .pkg-card.open { border-color: var(--w-teal-500); }
 
@@ -140,6 +139,10 @@
 }
 .pkg-dur svg { width: 14px; height: 14px; }
 
+.pkg-stock { display: inline-flex; align-items: center; margin-top: 6px; padding: 2px 9px; border-radius: 999px; font-size: .72rem; font-weight: 800; background: var(--w-teal-100); color: var(--w-teal-700); }
+.pkg-stock.low { background: #fff1d6; color: #9a4a00; }
+.pkg-stock.out { background: #fde4e4; color: #a61b1b; }
+.pkg-card.sold-out .pkg-name, .pkg-card.sold-out .pkg-price { opacity: .55; }
 .pkg-price { text-align: right; white-space: nowrap; line-height: 1.1; }
 .pkg-price strong {
     display: block;
@@ -160,7 +163,6 @@
     color: var(--w-muted);
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
-    transition: transform .2s ease, background .2s ease, color .2s ease;
 }
 .pkg-chevron svg { width: 16px; height: 16px; }
 .pkg-card.open .pkg-chevron {
@@ -173,7 +175,6 @@
 .pkg-buy {
     display: grid;
     grid-template-rows: 0fr;
-    transition: grid-template-rows .25s ease;
 }
 .pkg-card.open .pkg-buy { grid-template-rows: 1fr; }
 .pkg-buy-inner { overflow: hidden; min-height: 0; }
@@ -282,7 +283,8 @@
 
     <div class="pkg-list">
         {% for p in packages %}
-        <div class="pkg-card" id="pkg-{{ p.key }}">
+        {% set n = (stock or {}).get(p.key, 0) %}
+        <div class="pkg-card{% if n < 1 %} sold-out{% endif %}" id="pkg-{{ p.key }}">
             <button type="button" class="pkg-toggle"
                     aria-expanded="false" aria-controls="buy-{{ p.key }}"
                     onclick="togglePkg('{{ p.key }}')">
@@ -293,6 +295,9 @@
                             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
                             {{ p.duration }}
                         </div>
+                        {% if n < 1 %}<span class="pkg-stock out">Imeisha</span>
+                        {% elif n <= 5 %}<span class="pkg-stock low">Zimebaki {{ n }}</span>
+                        {% else %}<span class="pkg-stock">Zipo {{ n }}</span>{% endif %}
                     </div>
                     <div class="pkg-price">
                         <strong>{{ "{:,}".format(p.price) }}</strong>
@@ -312,8 +317,8 @@
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
                             Ingia ili kununua
                         </a>
-                        {% elif available < 1 %}
-                        <p class="pkg-note">Vocha zimeisha. Jaribu tena baadaye.</p>
+                        {% elif n < 1 %}
+                        <p class="pkg-note">Vocha za {{ p.name }} zimeisha kwa {{ location|title }}. Jaribu kifurushi kingine au baadaye.</p>
                         {% else %}
                         <form class="pkg-form" method="post" action="{{ url_for('wifi_buy') }}">
                             <input type="hidden" name="location" value="{{ location }}">
@@ -348,9 +353,6 @@ function togglePkg(key) {
     if (!wasOpen) {
         card.classList.add('open');
         card.querySelector('.pkg-toggle').setAttribute('aria-expanded', 'true');
-        setTimeout(function () {
-            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }, 260);
     }
 }
 </script>
