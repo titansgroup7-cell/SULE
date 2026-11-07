@@ -1,354 +1,399 @@
+
 {% extends "base.html" %}
-{% block title %}WiFi Vocha — MWANDOYA Wi-Fi & DOME Wi-Fi | Mr. Sule{% endblock %}
+{% block title %}WiFi Vocha | Mr. Sule{% endblock %}
 {% block content %}
+
 <style>
 :root {
-    --w-teal-900: #064e48;
-    --w-teal-700: #0f766e;
-    --w-teal-500: #14b8a6;
-    --w-teal-100: #d9f6ef;
-    --w-bg: #f4f7f6;
-    --w-surface: #ffffff;
-    --w-text: #0f1f1d;
-    --w-muted: #5b6b68;
-    --w-line: #dfe7e5;
-    --w-shadow: 0 1px 2px rgba(6,78,72,.06), 0 8px 24px rgba(6,78,72,.08);
+    --teal: #0d9488;
+    --deep: #064e48;
+    --bg: #f3f8f7;
+    --card: #ffffff;
+    --text: #142d2a;
+    --muted: #718581;
+    --line: #e1ece9;
 }
+
 @media (prefers-color-scheme: dark) {
     :root {
-        --w-bg: #0c1514;
-        --w-surface: #142220;
-        --w-text: #e8f3f1;
-        --w-muted: #93a9a5;
-        --w-line: #223633;
-        --w-teal-100: #123c37;
-        --w-shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+        --bg: #0b1715;
+        --card: #142522;
+        --text: #e5f5f1;
+        --muted: #9bb2ac;
+        --line: #263c37;
     }
 }
 
 .wifi-wrap {
-    padding: 16px 14px calc(88px + env(safe-area-inset-bottom, 0px));
-    max-width: 520px;
-    margin: 0 auto;
-    color: var(--w-text);
+    max-width: 480px;
+    margin: auto;
+    padding: 12px 12px 85px;
+    color: var(--text);
 }
 
-/* ---------- Hero ---------- */
+/* HERO */
 .wifi-hero {
     position: relative;
     overflow: hidden;
-    border-radius: 24px;
-    padding: 24px 20px 22px;
-    margin-bottom: 14px;
-    color: #fff;
-    background:
-        radial-gradient(120% 90% at 100% 0%, rgba(20,184,166,.55) 0%, transparent 60%),
-        linear-gradient(160deg, var(--w-teal-900) 0%, var(--w-teal-700) 100%);
-    box-shadow: 0 14px 32px rgba(6,78,72,.30);
+    padding: 20px 17px;
+    border-radius: 19px;
+    color: white;
+    background: linear-gradient(125deg, #063f3a, #0d9488 75%, #20b9a6);
+    box-shadow: 0 8px 22px rgba(13,148,136,.2);
+    margin-bottom: 12px;
 }
+
 .wifi-hero h1 {
-    font-size: 1.6rem;
-    line-height: 1.15;
-    font-weight: 800;
-    letter-spacing: -.02em;
-    margin: 0 0 8px;
-    max-width: 14ch;
+    font-size: 23px;
+    font-weight: 850;
+    margin: 0 0 4px;
+    letter-spacing: -.7px;
 }
+
 .wifi-hero p {
+    font-size: 12px;
     margin: 0;
-    font-size: .92rem;
-    line-height: 1.5;
-    color: rgba(255,255,255,.88);
-    max-width: 32ch;
+    opacity: .85;
 }
 
-/* Signal bars — the one memorable element */
-.wifi-signal {
+.hero-icon {
     position: absolute;
-    right: 20px;
-    top: 22px;
-    display: flex;
-    align-items: flex-end;
-    gap: 5px;
-    height: 56px;
-}
-.wifi-signal span {
-    width: 9px;
-    border-radius: 4px;
-    background: rgba(255,255,255,.95);
-    transform-origin: bottom;
-    animation: wifi-bar .7s cubic-bezier(.2,.8,.2,1) both;
-}
-.wifi-signal span:nth-child(1) { height: 14px; animation-delay: .05s; }
-.wifi-signal span:nth-child(2) { height: 26px; animation-delay: .15s; }
-.wifi-signal span:nth-child(3) { height: 40px; animation-delay: .25s; }
-.wifi-signal span:nth-child(4) { height: 56px; animation-delay: .35s; }
-@keyframes wifi-bar {
-    from { transform: scaleY(.1); opacity: 0; }
-    to   { transform: scaleY(1);  opacity: 1; }
-}
-
-/* ---------- Steps ---------- */
-.wifi-steps {
-    list-style: none;
-    margin: 0 0 18px;
-    padding: 14px 14px;
+    right: 17px;
+    top: 15px;
+    width: 48px;
+    height: 48px;
+    border-radius: 15px;
+    background: rgba(255,255,255,.15);
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-    background: var(--w-surface);
-    border: 1px solid var(--w-line);
-    border-radius: 18px;
-    counter-reset: step;
+    place-items: center;
 }
+
+.hero-icon svg {
+    width: 29px;
+    height: 29px;
+    stroke: white;
+    fill: none;
+    stroke-width: 1.7;
+}
+
+/* STEPS */
+.wifi-steps {
+    display: grid;
+    grid-template-columns: repeat(4,1fr);
+    gap: 5px;
+    padding: 11px 5px;
+    margin: 0 0 17px;
+    list-style: none;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 15px;
+}
+
 .wifi-steps li {
-    counter-increment: step;
     text-align: center;
-    font-size: .72rem;
-    line-height: 1.25;
-    color: var(--w-muted);
-    font-weight: 600;
+    font-size: 10px;
+    font-weight: 650;
+    color: var(--muted);
 }
-.wifi-steps li::before {
-    content: counter(step);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    margin: 0 auto 6px;
-    border-radius: 50%;
-    background: var(--w-teal-100);
-    color: var(--w-teal-700);
+
+.wifi-steps span {
+    display: grid;
+    place-items: center;
+    width: 25px;
+    height: 25px;
+    margin: 0 auto 5px;
+    border-radius: 9px;
+    color: #0d9488;
+    background: rgba(20,184,166,.13);
+    font-size: 12px;
     font-weight: 800;
-    font-size: .8rem;
-}
-@media (prefers-color-scheme: dark) {
-    .wifi-steps li::before { color: var(--w-teal-500); }
 }
 
-/* ---------- Section label ---------- */
+/* SECTION */
 .wifi-heading {
-    font-size: .95rem;
-    font-weight: 700;
-    margin: 0 4px 10px;
-    color: var(--w-text);
+    font-size: 14px;
+    font-weight: 800;
+    margin: 0 3px 10px;
 }
 
-/* ---------- Location cards ---------- */
-.wifi-grid { display: grid; gap: 12px; }
+/* CARDS */
+.wifi-grid {
+    display: grid;
+    gap: 9px;
+}
 
 .wifi-card {
-    position: relative;
     display: flex;
     align-items: center;
-    gap: 14px;
-    min-height: 76px;
-    padding: 14px 14px 14px 16px;
-    background: var(--w-surface);
-    border: 1px solid var(--w-line);
-    border-radius: 20px;
-    box-shadow: var(--w-shadow);
-    color: inherit;
+    gap: 11px;
+    min-height: 68px;
+    padding: 10px 12px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    color: var(--text);
     text-decoration: none;
+    position: relative;
     overflow: hidden;
+    transition: .2s ease;
     -webkit-tap-highlight-color: transparent;
-    transition: transform .15s ease, border-color .15s ease;
 }
-.wifi-card::before {
-    content: "";
-    position: absolute;
-    left: 0; top: 14px; bottom: 14px;
-    width: 4px;
-    border-radius: 0 4px 4px 0;
-    background: var(--w-teal-500);
-}
-.wifi-card:hover { border-color: var(--w-teal-500); }
-.wifi-card:active { transform: scale(.985); }
-.wifi-card:focus-visible {
-    outline: 3px solid var(--w-teal-500);
-    outline-offset: 2px;
+
+.wifi-card:active {
+    transform: scale(.975);
+    border-color: var(--teal);
 }
 
 .wifi-icon {
-    width: 52px; height: 52px;
-    border-radius: 16px;
-    display: flex; align-items: center; justify-content: center;
-    background: var(--w-teal-100);
-    color: var(--w-teal-700);
+    width: 43px;
+    height: 43px;
     flex-shrink: 0;
+    border-radius: 13px;
+    background: rgba(20,184,166,.12);
+    color: #0d9488;
+    display: grid;
+    place-items: center;
 }
-@media (prefers-color-scheme: dark) {
-    .wifi-icon { color: var(--w-teal-500); }
+
+.wifi-icon svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
-.wifi-icon svg,
-.wifi-arrow svg,
-.wifi-links a svg {
+
+.wifi-card-body {
+    min-width: 0;
+}
+
+.wifi-card h3 {
+    font-size: 13px;
+    font-weight: 850;
+    margin: 0 0 3px;
+    letter-spacing: .1px;
+}
+
+.wifi-card p {
+    font-size: 10.5px;
+    color: var(--muted);
+    margin: 0;
+    line-height: 1.4;
+}
+
+.wifi-arrow {
+    margin-left: auto;
+    flex-shrink: 0;
+    width: 27px;
+    height: 27px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(20,184,166,.1);
+    color: var(--teal);
+}
+
+.wifi-arrow svg {
+    width: 16px;
+    height: 16px;
     fill: none;
     stroke: currentColor;
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
 }
-.wifi-icon svg { width: 26px; height: 26px; }
 
-.wifi-card-body { min-width: 0; }
-.wifi-card h3 {
-    margin: 0 0 3px;
-    font-size: 1.08rem;
-    font-weight: 800;
-    letter-spacing: .01em;
-}
-.wifi-card p {
-    margin: 0;
-    font-size: .84rem;
-    line-height: 1.35;
-    color: var(--w-muted);
-}
-
-.wifi-arrow {
-    margin-left: auto;
-    flex-shrink: 0;
-    width: 34px; height: 34px;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    background: var(--w-bg);
-    color: var(--w-muted);
-    transition: background .15s, color .15s, transform .15s;
-}
-.wifi-arrow svg { width: 18px; height: 18px; }
-.wifi-card:hover .wifi-arrow {
-    background: var(--w-teal-700);
-    color: #fff;
-    transform: translateX(2px);
-}
-
-/* ---------- Panel card ---------- */
+/* ADMIN PANEL */
 .wifi-panel-card {
-    background: linear-gradient(135deg, #17252a, #263a40);
+    background: linear-gradient(120deg,#17272c,#263f43);
     border-color: transparent;
-    color: #fff;
+    color: white;
 }
-.wifi-panel-card::before { background: #fbbf24; }
-.wifi-panel-card .wifi-icon { background: rgba(255,255,255,.12); color: #fbbf24; }
-.wifi-panel-card p { color: rgba(255,255,255,.75); }
-.wifi-panel-card .wifi-arrow { background: rgba(255,255,255,.1); color: rgba(255,255,255,.8); }
-.wifi-panel-card:hover { border-color: #fbbf24; }
 
-/* ---------- Bottom links ---------- */
-.wifi-links { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.wifi-panel-card p {
+    color: #b9ceca;
+}
+
+.wifi-panel-card .wifi-icon {
+    background: rgba(255,255,255,.12);
+    color: #fbbf24;
+}
+
+.wifi-panel-card .wifi-arrow {
+    background: rgba(255,255,255,.12);
+    color: #fbbf24;
+}
+
+/* BOTTOM */
+.wifi-links {
+    margin-top: 13px;
+}
+
 .wifi-links a {
-    display: inline-flex;
+    display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
-    min-height: 44px;
-    padding: 0 18px;
-    border-radius: 999px;
-    font-size: .88rem;
-    font-weight: 700;
-    color: var(--w-teal-700);
-    background: var(--w-teal-100);
+    min-height: 42px;
+    padding: 8px 13px;
+    border-radius: 12px;
+    background: rgba(20,184,166,.12);
+    color: #0d9488;
+    font-size: 11px;
+    font-weight: 800;
     text-decoration: none;
 }
-@media (prefers-color-scheme: dark) {
-    .wifi-links a { color: var(--w-teal-500); }
+
+.wifi-links svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
-.wifi-links a svg { width: 17px; height: 17px; }
-.wifi-links a:focus-visible { outline: 3px solid var(--w-teal-500); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
-    .wifi-signal span { animation: none; }
-    .wifi-card, .wifi-arrow { transition: none; }
+    .wifi-card { transition: none; }
 }
 </style>
 
 <div class="wifi-wrap">
+
+    <!-- HERO -->
     <header class="wifi-hero">
-        <div class="wifi-signal" aria-hidden="true">
-            <span></span><span></span><span></span><span></span>
+        <div class="hero-icon">
+            <svg viewBox="0 0 24 24">
+                <path d="M5 9a11 11 0 0 1 14 0"/>
+                <path d="M8 12a6.5 6.5 0 0 1 8 0"/>
+                <path d="M11 15a2 2 0 0 1 2 0"/>
+                <circle cx="12" cy="19" r="1" fill="white"/>
+            </svg>
         </div>
         <h1>WiFi Vocha</h1>
-        <p>Lipa kwa simu, upate namba ya vocha papo hapo.</p>
+        <p>Chagua eneo, lipa, pata vocha.</p>
     </header>
 
-    <ol class="wifi-steps" aria-label="Hatua za kununua vocha">
-        <li>Chagua eneo</li>
-        <li>Chagua kifurushi</li>
-        <li>Lipa</li>
-        <li>Pata vocha</li>
+    <!-- STEPS -->
+    <ol class="wifi-steps">
+        <li><span>1</span>Eneo</li>
+        <li><span>2</span>Kifurushi</li>
+        <li><span>3</span>Lipa</li>
+        <li><span>4</span>Vocha</li>
     </ol>
 
-    <h2 class="wifi-heading">Chagua eneo lako</h2>
+    <h2 class="wifi-heading">Chagua WiFi yako</h2>
 
     <div class="wifi-grid">
-        <a href="{{ url_for('wifi_location', location='mwandoya') }}" class="wifi-card">
-            <div class="wifi-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+
+        <!-- MWANDOYA -->
+        <a href="{{ url_for('wifi_location', location='mwandoya') }}"
+           class="wifi-card">
+            <div class="wifi-icon">
+                <svg viewBox="0 0 24 24">
+                    <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                </svg>
             </div>
             <div class="wifi-card-body">
                 <h3>MWANDOYA Wi-Fi</h3>
-                <p>Vifurushi vya WiFi vya MWANDOYA Wi-Fi</p>
+                <p>Nunua vocha ya MWANDOYA</p>
             </div>
-            <span class="wifi-arrow" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            <span class="wifi-arrow">
+                <svg viewBox="0 0 24 24">
+                    <path d="m9 18 6-6-6-6"/>
+                </svg>
             </span>
         </a>
 
-        <a href="{{ url_for('wifi_location', location='mwanza') }}" class="wifi-card">
-            <div class="wifi-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <!-- DOME -->
+        <a href="{{ url_for('wifi_location', location='mwanza') }}"
+           class="wifi-card">
+            <div class="wifi-icon">
+                <svg viewBox="0 0 24 24">
+                    <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                </svg>
             </div>
             <div class="wifi-card-body">
                 <h3>DOME Wi-Fi</h3>
-                <p>Vifurushi vya WiFi vya DOME Wi-Fi</p>
+                <p>Nunua vocha ya DOME</p>
             </div>
-            <span class="wifi-arrow" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            <span class="wifi-arrow">
+                <svg viewBox="0 0 24 24">
+                    <path d="m9 18 6-6-6-6"/>
+                </svg>
             </span>
         </a>
 
-
-        <a href="{{ url_for('wifi_install') }}" class="wifi-card">
-            <div class="wifi-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg>
+        <!-- INSTALLATION -->
+        <a href="{{ url_for('wifi_install') }}"
+           class="wifi-card">
+            <div class="wifi-icon">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 2v4m0 12v4M2 12h4m12 0h4"/>
+                    <path d="m4.9 4.9 2.8 2.8m8.6 8.6 2.8 2.8m0-14.2-2.8 2.8m-8.6 8.6-2.8 2.8"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
             </div>
             <div class="wifi-card-body">
                 <h3>Agiza WiFi</h3>
-                <p>Omba ufungaji wa MWANDOYA Wi-Fi au DOME Wi-Fi</p>
+                <p>Omba ufungaji wa WiFi</p>
             </div>
-            <span class="wifi-arrow" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            <span class="wifi-arrow">
+                <svg viewBox="0 0 24 24">
+                    <path d="m9 18 6-6-6-6"/>
+                </svg>
             </span>
         </a>
 
+        <!-- ADMIN -->
         {% if show_panel %}
-        <a href="{{ url_for('wifi_panel') }}" class="wifi-card wifi-panel-card">
-            <div class="wifi-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        <a href="{{ url_for('wifi_panel') }}"
+           class="wifi-card wifi-panel-card">
+            <div class="wifi-icon">
+                <svg viewBox="0 0 24 24">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <path d="M3 9h18M9 21V9"/>
+                </svg>
             </div>
             <div class="wifi-card-body">
-                <h3>Panel</h3>
-                <p>Tengeneza vocha (malipo ya cash)</p>
+                <h3>Admin Panel</h3>
+                <p>Tengeneza vocha za cash</p>
             </div>
-            <span class="wifi-arrow" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            <span class="wifi-arrow">
+                <svg viewBox="0 0 24 24">
+                    <path d="m9 18 6-6-6-6"/>
+                </svg>
             </span>
         </a>
         {% endif %}
+
     </div>
 
+    <!-- HISTORY / LOGIN -->
     <div class="wifi-links">
         {% if current_user %}
         <a href="{{ url_for('wifi_history') }}">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-            Historia ya vocha zangu
+            <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 6v6l4 2"/>
+            </svg>
+            Historia ya vocha
         </a>
         {% else %}
         <a href="{{ url_for('login') }}">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
-            Ingia ili kununua
+            <svg viewBox="0 0 24 24">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                <path d="m10 17 5-5-5-5m5 5H3"/>
+            </svg>
+            Ingia kwenye akaunti
         </a>
         {% endif %}
     </div>
+
 </div>
 {% endblock %}
