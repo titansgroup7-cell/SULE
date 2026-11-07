@@ -1,15 +1,15 @@
 {
-  "appId": "com.dutoza.sulebusiness",
+  "appId": "com.sule.business",
   "appName": "SULE BUSINESS",
   "webDir": "www",
   "server": {
-    "url": "https://mrsulebusinessservices.dutoza.com",
+    "url": "https://sule-kmmmg11sp-dutoza.vercel.app",
     "cleartext": false,
     "allowNavigation": [
-      "mrsulebusinessservices.dutoza.com",
-      "*.dutoza.com",
+      "sule-kmmmg11sp-dutoza.vercel.app",
       "*.vercel.app",
-      "*.supabase.co"
+      "*.supabase.co",
+      "*.railway.app"
     ]
   },
   "plugins": {
@@ -19,11 +19,7 @@
       "showSpinner": false
     },
     "PushNotifications": {
-      "presentationOptions": [
-        "badge",
-        "sound",
-        "alert"
-      ]
+      "presentationOptions": ["badge", "sound", "alert"]
     }
   },
   "android": {
