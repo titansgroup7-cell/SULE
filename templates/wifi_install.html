@@ -1,10 +1,5 @@
-
 {% extends "base.html" %}
-<<<<<<< HEAD
 {% block title %}Agiza {{ label }}{% endblock %}
-=======
-{% block title %}Agiza WiFi{% endblock %}
->>>>>>> 0150331532b95335e99d3ebd374d80215f773e69
 {% block content %}
 
 <style>
@@ -34,7 +29,6 @@
     font-size: .85rem;
 }
 
-<<<<<<< HEAD
 .wi-price-tag {
     display: inline-block;
     margin-top: 10px;
@@ -45,8 +39,6 @@
     font-weight: 800;
 }
 
-=======
->>>>>>> 0150331532b95335e99d3ebd374d80215f773e69
 .wi-card {
     background: white;
     border: 1px solid #e5eeec;
@@ -121,7 +113,6 @@
     transform: scale(.98);
 }
 
-<<<<<<< HEAD
 .wi-back {
     display: inline-block;
     margin-bottom: 10px;
@@ -131,14 +122,11 @@
     text-decoration: none;
 }
 
-=======
->>>>>>> 0150331532b95335e99d3ebd374d80215f773e69
 @media(max-width:360px) {
     .wi-grid2 {
         grid-template-columns: 1fr;
         gap: 0;
     }
-<<<<<<< HEAD
 }
 
 @media (prefers-color-scheme: dark) {
@@ -149,25 +137,17 @@
         border-color: #263c37;
         color: #e5f5f1;
     }
-=======
->>>>>>> 0150331532b95335e99d3ebd374d80215f773e69
 }
 </style>
 
 <div class="wi-wrap">
 
-<<<<<<< HEAD
     <a class="wi-back" href="{{ url_for('wifi_install') }}">← Badilisha mtandao</a>
 
     <div class="wi-hero">
         <h1>Agiza {{ label }}</h1>
         <p>Jaza taarifa zako. Baada ya kutuma utaelekezwa kulipa.</p>
         <div class="wi-price-tag">Bei: TSh {{ "{:,}".format(amount) }} (bando la kwanza)</div>
-=======
-    <div class="wi-hero">
-        <h1>Agiza WiFi</h1>
-        <p>Jaza taarifa zako za ufungaji wa WiFi.</p>
->>>>>>> 0150331532b95335e99d3ebd374d80215f773e69
     </div>
 
     <form method="POST" class="wi-card" autocomplete="on" id="wifiForm">
@@ -181,25 +161,12 @@
                type="text" required
                inputmode="numeric"
                maxlength="20"
-<<<<<<< HEAD
                placeholder="Namba ya NIDA (herufi 20)">
         <div id="nidaError" class="wi-error">NIDA si sahihi. Lazima iwe namba 20.</div>
 
         <label for="email">Gmail / Barua pepe <span class="req">*</span></label>
         <input id="email" name="email" type="email"
                required placeholder="mfano@gmail.com"
-=======
-               minlength="20"
-               placeholder="Namba ya NIDA (tarakimu 20)">
-
-        <div class="wi-error" id="nidaError">
-            Enter valid NIDA number
-        </div>
-
-        <label for="email">Barua Pepe <span class="req">*</span></label>
-        <input id="email" name="email" type="email"
-               required placeholder="example@gmail.com"
->>>>>>> 0150331532b95335e99d3ebd374d80215f773e69
                value="{{ current_user.email if current_user and current_user.email else '' }}">
 
         <label for="phone">Namba ya Simu <span class="req">*</span></label>
@@ -207,13 +174,6 @@
                required placeholder="07XXXXXXXX"
                value="{{ current_user.phone if current_user and current_user.phone else '' }}">
 
-<<<<<<< HEAD
-=======
-        <label for="install_location">Anwani ya Ufungaji <span class="req">*</span></label>
-        <textarea id="install_location" name="install_location"
-                  rows="2" required placeholder="Eleza eneo la ufungaji"></textarea>
-
->>>>>>> 0150331532b95335e99d3ebd374d80215f773e69
         <div class="wi-grid2">
             <div>
                 <label for="region">Mkoa <span class="req">*</span></label>
@@ -242,11 +202,7 @@
             </div>
         </div>
 
-<<<<<<< HEAD
         <button type="submit">Endelea → Lipa TSh {{ "{:,}".format(amount) }}</button>
-=======
-        <button type="submit">Tuma Ombi</button>
->>>>>>> 0150331532b95335e99d3ebd374d80215f773e69
 
     </form>
 </div>
