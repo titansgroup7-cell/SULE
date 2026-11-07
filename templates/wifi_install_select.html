@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Agiza WiFi — Chagua Mtandao{% endblock %}
+{% block title %}Agiza Wi-Fi — Chagua Mtandao{% endblock %}
 {% block content %}
 
 <style>
@@ -126,18 +126,18 @@
 
 <div class="wis-wrap">
     <div class="wis-hero">
-        <h1>Agiza WiFi</h1>
-        <p>Chagua mtandao wa WiFi unayotaka kuufunga. Bei inajumuisha bando la mwezi wa kwanza.</p>
+        <h1>Agiza Wi-Fi</h1>
+        <p>Chagua mtandao wa Wi-Fi unayotaka kuufunga. Bei inajumuisha bando la mwezi wa kwanza.</p>
     </div>
 
-    <h2 class="wis-heading">Chagua aina ya WiFi</h2>
+    <h2 class="wis-heading">Chagua aina ya Wi-Fi</h2>
 
     <div class="wis-grid">
         <a href="{{ url_for('wifi_install_form', network='VODACOM') }}" class="wis-card">
             <div class="wis-logo vodacom-logo">vodacom</div>
             <div class="wis-body">
                 <h3>VODACOM</h3>
-                <p>WiFi ya Vodacom + bando la kwanza</p>
+                <p>Wi-Fi ya Vodacom + bando la kwanza</p>
                 <div class="wis-price">TSh {{ "{:,}".format(prices['VODACOM']) }}</div>
             </div>
             <span class="wis-arrow">
@@ -149,7 +149,7 @@
             <div class="wis-logo airtel-logo">airtel</div>
             <div class="wis-body">
                 <h3>AIRTEL</h3>
-                <p>WiFi ya Airtel + bando la kwanza</p>
+                <p>Wi-Fi ya Airtel + bando la kwanza</p>
                 <div class="wis-price">TSh {{ "{:,}".format(prices['AIRTEL']) }}</div>
             </div>
             <span class="wis-arrow">
@@ -161,7 +161,7 @@
             <div class="wis-logo yas-logo">yas</div>
             <div class="wis-body">
                 <h3>YAS</h3>
-                <p>WiFi ya Yas + bando la kwanza</p>
+                <p>Wi-Fi ya Yas + bando la kwanza</p>
                 <div class="wis-price">TSh {{ "{:,}".format(prices['YAS']) }}</div>
             </div>
             <span class="wis-arrow">

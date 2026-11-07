@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Historia ya Vocha za WiFi{% endblock %}
+{% block title %}Historia ya Vocha za Wi-Fi{% endblock %}
 {% block content %}
 <style>
 :root {
@@ -239,7 +239,7 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
         </a>
         <div>
-            <small>WiFi Vocha</small>
+            <small>Wi-Fi Vocha</small>
             <h1>Historia yangu</h1>
         </div>
     </div>
@@ -261,7 +261,7 @@
             </div>
             <div class="wh-ticket-foot">
                 <div class="wh-meta">
-                    <strong>{{ v.package_name or '—' }}</strong> · {{ WIFI_LOCATION_LABELS.get(v.location, v.location|title) }}<br>
+                    <strong>{{ v.package_name or '—' }}</strong> · {{ Wi-Fi_LOCATION_LABELS.get(v.location, v.location|title) }}<br>
                     {{ "{:,}".format(v.price) }} TZS{% if v.used_at %} · {{ v.used_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
                 </div>
                 <button type="button" class="wh-copy" data-code="{{ v.code }}">
@@ -275,7 +275,7 @@
         <div class="wh-empty">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/></svg>
             Bado huna vocha.
-            <a href="{{ url_for('wifi_home') }}">Nunua vocha ya WiFi</a>
+            <a href="{{ url_for('wifi_home') }}">Nunua vocha ya Wi-Fi</a>
         </div>
     {% endif %}
 
@@ -307,7 +307,7 @@
                 <div class="wh-price">{{ "{:,}".format(p.price) }} <small>TZS</small></div>
             </div>
             <div class="wh-meta">
-                <strong>{{ p.package_name }}</strong> · {{ WIFI_LOCATION_LABELS.get(p.location, p.location|title) }}<br>
+                <strong>{{ p.package_name }}</strong> · {{ Wi-Fi_LOCATION_LABELS.get(p.location, p.location|title) }}<br>
                 Ref: <span class="wh-ref">{{ p.order_reference or '—' }}</span>
                 {% if p.created_at %}<br><span class="wh-date">{{ p.created_at.strftime('%d/%m/%Y %H:%M') }}</span>{% endif %}
             </div>

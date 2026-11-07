@@ -139,7 +139,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
     is_blocked = db.Column(db.Boolean, default=False)
-    is_wifi_staff = db.Column(db.Boolean, default=False)  # ruhusa ya Panel ya WiFi (cash)
+    is_wifi_staff = db.Column(db.Boolean, default=False)  # ruhusa ya Panel ya Wi-Fi (cash)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     reset_otp = db.Column(db.String(10), default="")
     reset_otp_expires = db.Column(db.DateTime, nullable=True)
@@ -336,7 +336,7 @@ class ChatPresence(db.Model):
 
 
 # ---------------------------------------------------------------------------
-# WiFi Vouchers
+# Wi-Fi Vouchers
 # ---------------------------------------------------------------------------
 WIFI_PACKAGES = [
     {"key": "5h", "name": "Masaa 5", "price": 500, "duration": "masaa 5"},
@@ -352,7 +352,7 @@ WIFI_LOCATION_LABELS = {
     "mwanza": "DOME Wi-Fi",
 }
 
-# Bei za kuagiza WiFi (bando la kwanza la mwezi)
+# Bei za kuagiza Wi-Fi (bando la kwanza la mwezi)
 WIFI_INSTALL_NETWORKS = ("VODACOM", "AIRTEL", "YAS")
 WIFI_INSTALL_PRICES = {
     "VODACOM": 130000,
@@ -360,21 +360,21 @@ WIFI_INSTALL_PRICES = {
     "YAS": 180000,
 }
 WIFI_INSTALL_LABELS = {
-    "VODACOM": "Vodacom WiFi",
-    "AIRTEL": "Airtel WiFi",
-    "YAS": "Yas WiFi",
+    "VODACOM": "Vodacom Wi-Fi",
+    "AIRTEL": "Airtel Wi-Fi",
+    "YAS": "Yas Wi-Fi",
 }
 
 def wifi_location_label(location):
     key = (location or "").lower().strip()
-    return WIFI_LOCATION_LABELS.get(key, (location or "").title() or "WiFi")
+    return WIFI_LOCATION_LABELS.get(key, (location or "").title() or "Wi-Fi")
 
 # Ada ya huduma ya Uwakala/Lipa — inalipwa KABLA ombi halijaonekana kwa admin
 AGENCY_SERVICE_FEE = 5000
 
 
 class WifiVoucher(db.Model):
-    """Vocher za WiFi — pool inayopakiwa na admin, inatumiwa na user au panel."""
+    """Vocher za Wi-Fi — pool inayopakiwa na admin, inatumiwa na user au panel."""
     id = db.Column(db.Integer, primary_key=True)
     location = db.Column(db.String(20), nullable=False, index=True)  # mwandoya | mwanza
     code = db.Column(db.String(120), unique=True, nullable=False)
@@ -394,7 +394,7 @@ class WifiVoucher(db.Model):
 
 
 class WifiPurchase(db.Model):
-    """Oda ya ununuzi wa WiFi (kabla ya kupewa vocha)."""
+    """Oda ya ununuzi wa Wi-Fi (kabla ya kupewa vocha)."""
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
     location = db.Column(db.String(20), nullable=False)
@@ -413,7 +413,7 @@ class WifiPurchase(db.Model):
 
 
 class WifiInstallRequest(db.Model):
-    """Maombi ya kuagiza / kufunga WiFi nyumbani au ofisini."""
+    """Maombi ya kuagiza / kufunga Wi-Fi nyumbani au ofisini."""
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
     full_name = db.Column(db.String(150), nullable=False)
@@ -1705,7 +1705,7 @@ def _mark_payment_success(merchant_ref, extra=""):
     if not merchant_ref:
         return False, "no ref"
 
-    # WiFi purchase
+    # Wi-Fi purchase
     if merchant_ref.upper().startswith("WIFI"):
         purchase = WifiPurchase.query.filter_by(order_reference=merchant_ref).first()
         if purchase:
@@ -1715,13 +1715,13 @@ def _mark_payment_success(merchant_ref, extra=""):
                     if voucher:
                         send_push_to_user(
                             purchase.user_id,
-                            "Vocha yako ya WiFi ✓",
+                            "Vocha yako ya Wi-Fi ✓",
                             f"{purchase.package_name} ({purchase.location.title()}): {voucher.code}",
                             url="/wifi/history",
                             tag=f"wifi-ok-{purchase.id}",
                         )
                         send_push_to_admins(
-                            "WiFi — malipo + vocha ✓",
+                            "Wi-Fi — malipo + vocha ✓",
                             f"{purchase.package_name} · {purchase.location} · {voucher.code}",
                             url="/dashboard",
                             tag=f"wifi-pay-{purchase.id}",
@@ -1738,7 +1738,7 @@ def _mark_payment_success(merchant_ref, extra=""):
                             tag=f"wifi-ok-{purchase.id}",
                         )
                         send_push_to_admins(
-                            "WiFi — STOCK IMEISHA ⚠",
+                            "Wi-Fi — STOCK IMEISHA ⚠",
                             f"Malipo yamefanyika ({purchase.location}) lakini hakuna vocha. Jaza stock!",
                             url="/dashboard",
                             tag=f"wifi-stock-{purchase.id}",
@@ -1748,7 +1748,7 @@ def _mark_payment_success(merchant_ref, extra=""):
             return True, "wifi"
         return False, "wifi not found"
 
-    # WiFi Install (Agiza WiFi) — baada ya malipo ombi linaenda kwa mtoa huduma
+    # Wi-Fi Install (Agiza Wi-Fi) — baada ya malipo ombi linaenda kwa mtoa huduma
     winst = _parse_winst_pay_ref(merchant_ref)
     if winst:
         if winst.status in ("awaiting_payment", "payment_failed"):
@@ -1758,7 +1758,7 @@ def _mark_payment_success(merchant_ref, extra=""):
             db.session.commit()
             try:
                 send_push_to_admins(
-                    "Ombi jipya la kuagiza WiFi",
+                    "Ombi jipya la kuagiza Wi-Fi",
                     f"{winst.full_name} · {winst.network} · TSh {int(winst.amount or 0):,} · {winst.region}/{winst.district}",
                     url=url_for("admin_wifi_install"),
                     tag=f"wifi-install-{winst.id}",
@@ -1767,7 +1767,7 @@ def _mark_payment_success(merchant_ref, extra=""):
                     send_push_to_user(
                         winst.user_id,
                         "Malipo yamepokelewa",
-                        f"Ombi lako la {winst.network} WiFi limetumwa kwa mtoa huduma wetu. Tutawasiliana nawe.",
+                        f"Ombi lako la {winst.network} Wi-Fi limetumwa kwa mtoa huduma wetu. Tutawasiliana nawe.",
                         url="/wifi",
                         tag=f"winst-ok-{winst.id}",
                     )
@@ -1881,7 +1881,7 @@ def _mark_payment_failed(merchant_ref, reason="Malipo yameshindwa."):
                 try:
                     send_push_to_user(
                         purchase.user_id,
-                        "Malipo ya WiFi yameshindwa",
+                        "Malipo ya Wi-Fi yameshindwa",
                         f"{purchase.package_name}: {reason}. Jaribu tena.",
                         url="/wifi",
                         tag=f"wifi-fail-{purchase.id}",
@@ -1901,7 +1901,7 @@ def _mark_payment_failed(merchant_ref, reason="Malipo yameshindwa."):
                 if winst.user_id:
                     send_push_to_user(
                         winst.user_id,
-                        "Malipo ya Agiza WiFi yameshindwa",
+                        "Malipo ya Agiza Wi-Fi yameshindwa",
                         f"{winst.network}: {reason}. Jaribu kulipa tena.",
                         url=url_for("wifi_install_pay", req_id=winst.id),
                         tag=f"winst-fail-{winst.id}",
@@ -4541,7 +4541,7 @@ def ensure_agency_columns():
             except Exception as e2:
                 print(f"license_type widen note: {e2}")
 
-        # WiFi Install Request — network, amount, payment fields
+        # Wi-Fi Install Request — network, amount, payment fields
         if "wifi_install_request" in tables:
             existing_w = {c["name"] for c in insp.get_columns("wifi_install_request")}
             winst_cols = {
@@ -4575,7 +4575,7 @@ def init_db():
 
 
 # ---------------------------------------------------------------------------
-# WiFi Service
+# Wi-Fi Service
 # ---------------------------------------------------------------------------
 def _wifi_pkg_by_key(key):
     for p in WIFI_PACKAGES:
@@ -4595,7 +4595,7 @@ def _wifi_staff_required(f):
             flash("Akaunti yako imefungwa.", "error")
             return redirect(url_for("home"))
         if not (user.is_admin or getattr(user, "is_wifi_staff", False)):
-            flash("Huna ruhusa ya kuingia kwenye Panel ya WiFi.", "error")
+            flash("Huna ruhusa ya kuingia kwenye Panel ya Wi-Fi.", "error")
             return redirect(url_for("wifi_home"))
         return f(*args, **kwargs)
     return decorated
@@ -4611,7 +4611,7 @@ def wifi_home():
 @app.route("/wifi/agiza", methods=["GET"])
 @login_required
 def wifi_install():
-    """Chagua mtandao wa WiFi (VODACOM / AIRTEL / YAS)."""
+    """Chagua mtandao wa Wi-Fi (VODACOM / AIRTEL / YAS)."""
     return render_template(
         "wifi_install_select.html",
         networks=WIFI_INSTALL_NETWORKS,
@@ -4623,7 +4623,7 @@ def wifi_install():
 @app.route("/wifi/agiza/<network>", methods=["GET", "POST"])
 @login_required
 def wifi_install_form(network):
-    """Fomu ya kuagiza WiFi baada ya kuchagua mtandao."""
+    """Fomu ya kuagiza Wi-Fi baada ya kuchagua mtandao."""
     user = get_current_user()
     network = (network or "").strip().upper()
     if network not in WIFI_INSTALL_PRICES:
@@ -4689,7 +4689,7 @@ def wifi_install_form(network):
 @app.route("/wifi/agiza/pay/<int:req_id>", methods=["GET", "POST"])
 @login_required
 def wifi_install_pay(req_id):
-    """Lipa ada ya ufungaji wa WiFi — baada ya malipo ombi linaenda kwa mtoa huduma."""
+    """Lipa ada ya ufungaji wa Wi-Fi — baada ya malipo ombi linaenda kwa mtoa huduma."""
     user = get_current_user()
     req = WifiInstallRequest.query.get_or_404(req_id)
     if req.user_id and req.user_id != user.id and not user.is_admin:
@@ -4701,7 +4701,7 @@ def wifi_install_pay(req_id):
         return redirect(url_for("wifi_install"))
 
     amount = int(req.amount or WIFI_INSTALL_PRICES.get(req.network, 0))
-    label = WIFI_INSTALL_LABELS.get(req.network, req.network or "WiFi")
+    label = WIFI_INSTALL_LABELS.get(req.network, req.network or "Wi-Fi")
 
     if request.method == "POST":
         payment_phone = (request.form.get("payment_phone") or "").strip()
@@ -4743,7 +4743,7 @@ def wifi_install_pay(req_id):
             db.session.commit()
             try:
                 send_push_to_admins(
-                    "Ombi jipya la kuagiza WiFi",
+                    "Ombi jipya la kuagiza Wi-Fi",
                     f"{req.full_name} · {req.network} · TSh {amount:,}",
                     url=url_for("admin_wifi_install"),
                     tag=f"wifi-install-{req.id}",
@@ -5389,21 +5389,20 @@ def favicon():
 
 @app.route("/.well-known/assetlinks.json")
 def digital_asset_links():
-    response = jsonify([
-        {
-            "relation": ["delegate_permission/common.handle_all_urls"],
-            "target": {
-                "namespace": "android_app",
-                "package_name": "com.dutoza.sulebusiness",
-                "sha256_cert_fingerprints": [
-                    "93:8D:4D:1E:E0:BB:6F:C5:91:05:46:0F:81:95:5C:61:23:FC:6E:A8:23:56:A7:0C:11:69:87:7F:2C:05:83:CB"
-                ]
-            }
-        }
-    ])
+    """Digital Asset Links — PWABuilder / Play Store (com.dutoza.sulebusiness)."""
+    response = jsonify([{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "com.dutoza.sulebusiness",
+            "sha256_cert_fingerprints": [
+                "93:8D:4D:1E:E0:BB:6F:C5:91:05:46:0F:81:95:5C:61:23:FC:6E:A8:23:56:A7:0C:11:69:87:7F:2C:05:83:CB"
+            ],
+        },
+    }])
     response.headers["Content-Type"] = "application/json"
+    response.headers["Cache-Control"] = "no-cache, max-age=0"
     return response
-
 
 
 @app.route('/robots.txt')

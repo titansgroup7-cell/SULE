@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Admin — Maombi ya Agiza WiFi{% endblock %}
+{% block title %}Admin — Maombi ya Agiza Wi-Fi{% endblock %}
 {% block content %}
 <style>
 .awi { max-width: 720px; margin: 0 auto; padding: 14px 14px 100px; }
@@ -41,10 +41,10 @@
 <div class="awi">
     <div class="awi-top">
         <div>
-            <h1>Maombi ya Agiza WiFi</h1>
+            <h1>Maombi ya Agiza Wi-Fi</h1>
             <div class="sub">Pending (yaliyolipiwa): <strong>{{ pending }}</strong></div>
         </div>
-        <a href="{{ url_for('admin_wifi') }}">← WiFi Admin</a>
+        <a href="{{ url_for('admin_wifi') }}">← Wi-Fi Admin</a>
     </div>
 
     {% if not items %}

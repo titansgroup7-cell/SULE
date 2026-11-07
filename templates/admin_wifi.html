@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}WiFi Admin{% endblock %}
+{% block title %}Wi-Fi Admin{% endblock %}
 {% block content %}
 <style>
 /* =====================================================================
-   WiFi Admin — layout tuli (hakuna animation, hakuna kuruka)
+   Wi-Fi Admin — layout tuli (hakuna animation, hakuna kuruka)
    ===================================================================== */
 :root {
     --a-brand: #0f766e;
@@ -191,7 +191,7 @@ html, body { overflow-x: hidden; }
         </a>
         <div>
             <small>Mr. Sule</small>
-            <h1>WiFi Admin</h1>
+            <h1>Wi-Fi Admin</h1>
         </div>
     </header>
 
@@ -199,7 +199,7 @@ html, body { overflow-x: hidden; }
     <div class="aw-sum">
         {% for loc in locations %}
         <div class="aw-sum-card">
-            <div class="loc">{{ WIFI_LOCATION_LABELS.get(loc, loc|title) }}</div>
+            <div class="loc">{{ Wi-Fi_LOCATION_LABELS.get(loc, loc|title) }}</div>
             <span class="num">{{ stats[loc].available }}</span>
             <div class="sub">zipo · {{ stats[loc].used }} zimetumika</div>
         </div>
@@ -215,7 +215,7 @@ html, body { overflow-x: hidden; }
             <h3 class="aw-h3">Stock iliyopo</h3>
             {% for loc in locations %}
             <div class="aw-card">
-                <div class="aw-h3" style="margin-bottom:10px">{{ WIFI_LOCATION_LABELS.get(loc, loc|title) }}</div>
+                <div class="aw-h3" style="margin-bottom:10px">{{ Wi-Fi_LOCATION_LABELS.get(loc, loc|title) }}</div>
                 <div class="aw-stock">
                     {% for p in packages %}
                     {% set n = stock_matrix[loc].by_package[p.key] %}
@@ -240,7 +240,7 @@ html, body { overflow-x: hidden; }
                 {% for loc in locations %}
                 <label class="{% if loop.first %}on{% endif %}">
                     <input type="radio" name="location" value="{{ loc }}" {% if loop.first %}checked{% endif %} required>
-                    {{ WIFI_LOCATION_LABELS.get(loc, loc|title) }}
+                    {{ Wi-Fi_LOCATION_LABELS.get(loc, loc|title) }}
                 </label>
                 {% endfor %}
             </div>
@@ -285,7 +285,7 @@ html, body { overflow-x: hidden; }
                 <div class="main">
                     <div class="t aw-code">{{ v.code }}</div>
                     <div class="m">
-                        {{ v.package_name or '—' }} · {{ WIFI_LOCATION_LABELS.get(v.location, v.location|title) }}
+                        {{ v.package_name or '—' }} · {{ Wi-Fi_LOCATION_LABELS.get(v.location, v.location|title) }}
                         · {{ 'Panel' if v.source == 'panel' else 'Mtandaoni' }}
                         {% if v.used_by %}· {{ v.used_by.username }}{% endif %}<br>
                         {% if v.used_at %}{{ v.used_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
@@ -317,7 +317,7 @@ html, body { overflow-x: hidden; }
                 <div class="main">
                     <div class="t aw-code">{{ v.code }}</div>
                     <div class="m">
-                        {{ v.package_name or '—' }} · {{ WIFI_LOCATION_LABELS.get(v.location, v.location|title) }}<br>
+                        {{ v.package_name or '—' }} · {{ Wi-Fi_LOCATION_LABELS.get(v.location, v.location|title) }}<br>
                         {% if v.used_at %}{{ v.used_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
                     </div>
                 </div>
@@ -338,7 +338,7 @@ html, body { overflow-x: hidden; }
     <!-- ==================== STAFF ==================== -->
     <section class="aw-panel" id="aw-staff">
         <h2 class="aw-title">Staff</h2>
-        <p class="aw-sub">Staff wanaweza kutengeneza vocha za cash kwenye Panel ya WiFi.</p>
+        <p class="aw-sub">Staff wanaweza kutengeneza vocha za cash kwenye Panel ya Wi-Fi.</p>
 
         <button type="button" class="aw-btn block" id="aw-staff-open" aria-expanded="{{ 'true' if q else 'false' }}" aria-controls="aw-search"
                 style="margin-bottom:14px">
@@ -457,7 +457,7 @@ html, body { overflow-x: hidden; }
                 {% for loc in locations %}
                 <div class="aw-row">
                     <div class="main">
-                        <div class="t">{{ WIFI_LOCATION_LABELS.get(loc, loc|title) }}</div>
+                        <div class="t">{{ Wi-Fi_LOCATION_LABELS.get(loc, loc|title) }}</div>
                         <div class="m">Vocha {{ report_by_location[loc].count }}</div>
                     </div>
                     <div class="end">{{ "{:,}".format(report_by_location[loc].revenue) }}</div>
@@ -531,7 +531,7 @@ html, body { overflow-x: hidden; }
                     <div class="main">
                         <div class="t aw-code">{{ v.code }}</div>
                         <div class="m">
-                            {{ v.package_name or '—' }} · {{ WIFI_LOCATION_LABELS.get(v.location, v.location|title) }} · {{ 'Panel' if v.source == 'panel' else 'Mtandaoni' }}<br>
+                            {{ v.package_name or '—' }} · {{ Wi-Fi_LOCATION_LABELS.get(v.location, v.location|title) }} · {{ 'Panel' if v.source == 'panel' else 'Mtandaoni' }}<br>
                             {% if v.used_at %}{{ v.used_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
                         </div>
                     </div>
@@ -548,7 +548,7 @@ html, body { overflow-x: hidden; }
 </div>
 
 <!-- Bottom navigation: imeshikamana chini, haisogei pembeni -->
-<nav class="aw-nav" aria-label="WiFi Admin">
+<nav class="aw-nav" aria-label="Wi-Fi Admin">
     <button type="button" data-tab="vocha" class="active">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9a2 2 0 0 0 0 6v2a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-2a2 2 0 0 1 0-6V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1z"/><path d="M14 6v12"/></svg>
         Vocha
