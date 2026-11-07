@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Historia ya Vocha za WiFi{% endblock %}
+{% block content %}
+<style>
+.wh-wrap { padding: 14px 14px 90px; max-width: 520px; margin: 0 auto; }
+.wh-top { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.wh-back {
+    width: 38px; height: 38px; border-radius: 12px; background: #fff;
+    border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center;
+    color: #334155;
+}
+.wh-back svg {
+    width: 20px; height: 20px; stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.wh-top h1 { font-size: 1.15rem; }
+.wh-card {
+    background: #fff; border-radius: 14px; border: 1px solid #e8eaed;
+    padding: 14px; margin-bottom: 10px;
+}
+.wh-code {
+    font-family: ui-monospace, monospace; font-size: 1.1rem; font-weight: 800;
+    letter-spacing: .04em; color: #0f766e; word-break: break-all;
+}
+.wh-meta { font-size: .8rem; color: #64748b; margin-top: 6px; line-height: 1.45; }
+.wh-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: .7rem; font-weight: 700;
+    padding: 3px 8px; border-radius: 999px; margin-bottom: 6px;
+}
+.wh-badge svg {
+    width: 12px; height: 12px; stroke: currentColor; fill: none;
+    stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round;
+}
+.wh-badge.ok { background: #ecfdf5; color: #0f766e; }
+.wh-badge.wait { background: #fffbeb; color: #b45309; }
+.wh-badge.fail { background: #fef2f2; color: #b91c1c; }
+.wh-empty { text-align: center; color: #94a3b8; padding: 40px 10px; }
+.wh-section { font-size: .75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase;
+    letter-spacing: .06em; margin: 18px 0 8px; }
+</style>
+
+<div class="wh-wrap">
+    <div class="wh-top">
+        <a href="{{ url_for('wifi_home') }}" class="wh-back" aria-label="Rudi">
+            <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+        </a>
+        <h1>Historia ya WiFi</h1>
+    </div>
+
+    <div class="wh-section">Vocha zilizopokelewa</div>
+    {% if vouchers %}
+        {% for v in vouchers %}
+        <div class="wh-card">
+            <span class="wh-badge ok">
+                <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+                IMEPOKELEWA
+            </span>
+            <div class="wh-code">{{ v.code }}</div>
+            <div class="wh-meta">
+                {{ v.package_name or '—' }} · {{ v.location|title }} · {{ "{:,}".format(v.price) }} TZS<br>
+                {% if v.used_at %}{{ v.used_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="wh-empty">Bado huna vocha. Nunua kutoka WiFi.</div>
+    {% endif %}
+
+    <div class="wh-section">Maombi ya malipo</div>
+    {% if purchases %}
+        {% for p in purchases %}
+        <div class="wh-card">
+            {% if p.status == 'paid' %}
+            <span class="wh-badge ok">
+                <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+                IMELIPWA
+            </span>
+            {% elif p.status == 'awaiting_payment' %}
+            <span class="wh-badge wait">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                INASUBIRI MALIPO
+            </span>
+            {% else %}
+            <span class="wh-badge fail">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+                IMESHINDWA
+            </span>
+            {% endif %}
+            <div class="wh-meta">
+                <strong>{{ p.package_name }}</strong> · {{ p.location|title }} · {{ "{:,}".format(p.price) }} TZS<br>
+                Ref: {{ p.order_reference or '—' }}<br>
+                {% if p.created_at %}{{ p.created_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+                {% if p.fail_reason %}<br><span style="color:#b91c1c">{{ p.fail_reason }}</span>{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="wh-empty" style="padding:16px">Hakuna maombi bado.</div>
+    {% endif %}
+</div>
+{% endblock %}

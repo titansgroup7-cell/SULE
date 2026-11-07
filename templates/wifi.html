@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}WiFi Vocha — Mwandoya & Mwanza | Mr. Sule{% endblock %}
+{% block content %}
+<style>
+.wifi-wrap { padding: 16px 14px 80px; max-width: 520px; margin: 0 auto; }
+.wifi-hero {
+    background: linear-gradient(135deg, #0f766e 0%, #0d9488 50%, #14b8a6 100%);
+    border-radius: 18px; color: #fff; padding: 22px 18px; margin-bottom: 18px;
+    box-shadow: 0 10px 28px rgba(13,148,136,.28);
+    display: flex; gap: 14px; align-items: flex-start;
+}
+.wifi-hero-icon {
+    width: 48px; height: 48px; border-radius: 14px; flex-shrink: 0;
+    background: rgba(255,255,255,.18);
+    display: flex; align-items: center; justify-content: center;
+}
+.wifi-hero-icon svg {
+    width: 26px; height: 26px; stroke: #fff; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.wifi-hero h1 { font-size: 1.3rem; margin-bottom: 6px; font-weight: 700; }
+.wifi-hero p { opacity: .92; font-size: .9rem; line-height: 1.4; }
+.wifi-grid { display: grid; gap: 12px; }
+.wifi-card {
+    display: flex; align-items: center; gap: 14px;
+    background: #fff; border-radius: 16px; padding: 16px 14px;
+    border: 1px solid #e8eaed; box-shadow: 0 2px 10px rgba(0,0,0,.04);
+    transition: transform .15s, box-shadow .15s;
+}
+.wifi-card:active { transform: scale(.98); }
+.wifi-icon {
+    width: 52px; height: 52px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    background: #ecfdf5; color: #0f766e; flex-shrink: 0;
+}
+.wifi-icon svg {
+    width: 26px; height: 26px; stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.wifi-card h3 { font-size: 1.05rem; margin-bottom: 2px; }
+.wifi-card p { font-size: .82rem; color: #64748b; }
+.wifi-arrow {
+    margin-left: auto; color: #94a3b8; display: flex; align-items: center;
+}
+.wifi-arrow svg {
+    width: 20px; height: 20px; stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.wifi-panel-card {
+    background: linear-gradient(135deg, #1e293b, #334155);
+    color: #fff; border: none;
+}
+.wifi-panel-card .wifi-icon { background: rgba(255,255,255,.12); color: #fff; }
+.wifi-panel-card p { color: rgba(255,255,255,.75); }
+.wifi-panel-card .wifi-arrow { color: rgba(255,255,255,.55); }
+.wifi-links { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.wifi-links a {
+    font-size: .85rem; color: #0f766e; background: #ecfdf5;
+    padding: 8px 14px; border-radius: 999px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.wifi-links a svg {
+    width: 16px; height: 16px; stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+</style>
+
+<div class="wifi-wrap">
+    <div class="wifi-hero">
+        <div class="wifi-hero-icon">
+            <svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1.5" fill="currentColor" stroke="none"/></svg>
+        </div>
+        <div>
+            <h1>WiFi Vocha</h1>
+            <p>Chagua eneo, chagua kifurushi, lipa na upate namba ya vocha papo hapo.</p>
+        </div>
+    </div>
+
+    <div class="wifi-grid">
+        <a href="{{ url_for('wifi_location', location='mwandoya') }}" class="wifi-card">
+            <div class="wifi-icon">
+                <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            </div>
+            <div>
+                <h3>MWANDOYA</h3>
+                <p>Vifurushi vya WiFi — Mwandoya</p>
+            </div>
+            <span class="wifi-arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            </span>
+        </a>
+
+        <a href="{{ url_for('wifi_location', location='mwanza') }}" class="wifi-card">
+            <div class="wifi-icon">
+                <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            </div>
+            <div>
+                <h3>MWANZA</h3>
+                <p>Vifurushi vya WiFi — Mwanza</p>
+            </div>
+            <span class="wifi-arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            </span>
+        </a>
+
+        {% if show_panel %}
+        <a href="{{ url_for('wifi_panel') }}" class="wifi-card wifi-panel-card">
+            <div class="wifi-icon">
+                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            </div>
+            <div>
+                <h3>PANEL</h3>
+                <p>Tengeneza vocha (malipo cash)</p>
+            </div>
+            <span class="wifi-arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+            </span>
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="wifi-links">
+        {% if current_user %}
+        <a href="{{ url_for('wifi_history') }}">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            Historia ya vocha zangu
+        </a>
+        {% else %}
+        <a href="{{ url_for('login') }}">
+            <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
+            Ingia ili kununua
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

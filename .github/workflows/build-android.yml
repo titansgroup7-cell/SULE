@@ -1,0 +1,120 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "App server URL (leave empty for capacitor.config.json)"
+        required: false
+        default: ""
+
+jobs:
+  build:
+    name: Capacitor to Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Configure Android SDK
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" 2>&1 | tail -15 || true
+
+      - name: Install Capacitor (explicit)
+        run: |
+          node -v
+          npm -v
+          rm -f package-lock.json
+          rm -rf node_modules
+          npm install --no-audit --no-fund --loglevel=error \
+            @capacitor/core@6.2.0 \
+            @capacitor/cli@6.2.0 \
+            @capacitor/android@6.2.0 \
+            @capacitor/app@6.0.2 \
+            @capacitor/haptics@6.0.2 \
+            @capacitor/keyboard@6.0.3 \
+            @capacitor/push-notifications@6.0.3 \
+            @capacitor/splash-screen@6.0.3 \
+            @capacitor/status-bar@6.0.2
+          test -x node_modules/.bin/cap
+          ./node_modules/.bin/cap --version
+          ls node_modules/@capacitor/
+
+      - name: Prepare www folder
+        run: |
+          npm run build:www
+          test -f www/index.html
+          cat capacitor.config.json
+
+      - name: Optional server URL override
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.server_url != ''
+        env:
+          SERVER_URL: ${{ github.event.inputs.server_url }}
+        run: |
+          node -e "
+          const fs=require('fs');
+          const c=JSON.parse(fs.readFileSync('capacitor.config.json','utf8'));
+          c.server=c.server||{};
+          c.server.url=process.env.SERVER_URL;
+          fs.writeFileSync('capacitor.config.json', JSON.stringify(c,null,2));
+          console.log('URL=', c.server.url);
+          "
+
+      - name: Create Android project
+        run: |
+          rm -rf android
+          ./node_modules/.bin/cap add android
+          ./node_modules/.bin/cap sync android
+          test -f android/gradlew
+          chmod +x android/gradlew
+
+      - name: Write google-services.json from secret
+        env:
+          GJSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GJSON" ]; then
+            printf '%s\n' "$GJSON" > android/app/google-services.json
+            echo "google-services.json OK"
+            if ! grep -q "com.google.gms:google-services" android/build.gradle; then
+              sed -i "/dependencies {/a\        classpath 'com.google.gms:google-services:4.4.2'" android/build.gradle
+            fi
+            if ! grep -q "com.google.gms.google-services" android/app/build.gradle; then
+              echo "apply plugin: 'com.google.gms.google-services'" >> android/app/build.gradle
+            fi
+          else
+            echo "::warning::GOOGLE_SERVICES_JSON secret missing. APK builds; native FCM needs the secret + rebuild."
+          fi
+
+      - name: Build debug APK
+        working-directory: android
+        env:
+          GRADLE_OPTS: "-Xmx2g -Dorg.gradle.daemon=false"
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sule-business-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30

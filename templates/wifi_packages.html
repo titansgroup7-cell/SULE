@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}WiFi {{ location|title }} — Vifurushi{% endblock %}
+{% block content %}
+<style>
+.wp-wrap { padding: 14px 14px 90px; max-width: 520px; margin: 0 auto; }
+.wp-top { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.wp-back {
+    width: 38px; height: 38px; border-radius: 12px; background: #fff;
+    border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center;
+    color: #334155;
+}
+.wp-back svg {
+    width: 20px; height: 20px; stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.wp-top h1 { font-size: 1.15rem; }
+.wp-stock {
+    font-size: .8rem; color: #64748b; background: #f1f5f9;
+    padding: 6px 12px; border-radius: 999px; margin-bottom: 14px;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.wp-stock svg {
+    width: 14px; height: 14px; stroke: currentColor; fill: none;
+    stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0;
+}
+.wp-stock.ok { color: #0f766e; background: #ecfdf5; }
+.wp-stock.low { color: #b45309; background: #fffbeb; }
+.wp-stock.out { color: #b91c1c; background: #fef2f2; }
+.pkg-list { display: grid; gap: 10px; }
+.pkg-card {
+    background: #fff; border-radius: 16px; border: 1px solid #e8eaed;
+    padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.03);
+}
+.pkg-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pkg-name { font-weight: 700; font-size: 1rem; }
+.pkg-dur { font-size: .8rem; color: #64748b; margin-top: 2px; }
+.pkg-price {
+    font-weight: 800; color: #0f766e; font-size: 1.05rem; white-space: nowrap;
+}
+.pkg-buy {
+    margin-top: 12px; display: none; border-top: 1px solid #f1f5f9; padding-top: 12px;
+}
+.pkg-card.open .pkg-buy { display: block; }
+.pkg-card.open { border-color: #99f6e4; box-shadow: 0 4px 16px rgba(13,148,136,.12); }
+.pkg-toggle {
+    width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 0;
+}
+.pkg-form label { display: block; font-size: .8rem; color: #64748b; margin-bottom: 4px; }
+.pkg-form input {
+    width: 100%; padding: 11px 12px; border-radius: 12px; border: 1px solid #e2e8f0;
+    margin-bottom: 10px; background: #f8fafc;
+}
+.pkg-form button {
+    width: 100%; padding: 12px; border: none; border-radius: 12px;
+    background: linear-gradient(135deg, #0f766e, #14b8a6); color: #fff;
+    font-weight: 700; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.pkg-form button svg {
+    width: 18px; height: 18px; stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.pkg-form button:disabled { opacity: .55; cursor: not-allowed; }
+.pkg-note { font-size: .75rem; color: #94a3b8; margin-top: 6px; text-align: center; }
+</style>
+
+<div class="wp-wrap">
+    <div class="wp-top">
+        <a href="{{ url_for('wifi_home') }}" class="wp-back" aria-label="Rudi">
+            <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+        </a>
+        <h1>WiFi — {{ location|title }}</h1>
+    </div>
+
+    {% if available > 5 %}
+    <div class="wp-stock ok">
+        <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+        Vocha available: {{ available }}
+    </div>
+    {% elif available > 0 %}
+    <div class="wp-stock low">
+        <svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+        Vocha chache: {{ available }}
+    </div>
+    {% else %}
+    <div class="wp-stock out">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+        Vocha zimeisha kwa sasa
+    </div>
+    {% endif %}
+
+    <div class="pkg-list">
+        {% for p in packages %}
+        <div class="pkg-card" id="pkg-{{ p.key }}">
+            <button type="button" class="pkg-toggle" onclick="togglePkg('{{ p.key }}')">
+                <div class="pkg-row">
+                    <div>
+                        <div class="pkg-name">{{ p.name }}</div>
+                        <div class="pkg-dur">{{ p.duration }}</div>
+                    </div>
+                    <div class="pkg-price">{{ "{:,}".format(p.price) }} TZS</div>
+                </div>
+            </button>
+            <div class="pkg-buy">
+                {% if not current_user %}
+                <a href="{{ url_for('login') }}" style="display:flex;align-items:center;justify-content:center;gap:8px;text-align:center;padding:12px;background:#0f766e;color:#fff;border-radius:12px;font-weight:700;">
+                    <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
+                    Ingia ili kununua
+                </a>
+                {% elif available < 1 %}
+                <p class="pkg-note">Vocha zimeisha. Jaribu baadaye.</p>
+                {% else %}
+                <form class="pkg-form" method="post" action="{{ url_for('wifi_buy') }}">
+                    <input type="hidden" name="location" value="{{ location }}">
+                    <input type="hidden" name="package_key" value="{{ p.key }}">
+                    <label>Namba ya malipo (M-Pesa / Tigo Pesa n.k.)</label>
+                    <input type="tel" name="payment_phone" required placeholder="07XXXXXXXX"
+                           value="{{ current_user.phone if current_user else '' }}">
+                    <button type="submit">
+                        <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+                        Tengeneza vocha — {{ "{:,}".format(p.price) }} TZS
+                    </button>
+                    <p class="pkg-note">Utapokea arifa na namba ya vocha baada ya malipo kuthibitishwa.</p>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+<script>
+function togglePkg(key) {
+    var card = document.getElementById('pkg-' + key);
+    var wasOpen = card.classList.contains('open');
+    document.querySelectorAll('.pkg-card').forEach(function(c){ c.classList.remove('open'); });
+    if (!wasOpen) card.classList.add('open');
+}
+</script>
+{% endblock %}

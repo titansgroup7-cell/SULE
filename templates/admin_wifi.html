@@ -1,0 +1,406 @@
+{% extends "base.html" %}
+{% block title %}Admin — WiFi Vocha{% endblock %}
+{% block content %}
+<style>
+.aw-wrap { padding: 14px 14px 90px; max-width: 640px; margin: 0 auto; }
+.aw-top { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.aw-back {
+    width: 38px; height: 38px; border-radius: 12px; background: #fff;
+    border: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: center;
+    color: #334155;
+}
+.aw-back svg {
+    width: 20px; height: 20px; stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.aw-top h1 { font-size: 1.15rem; flex: 1; }
+.aw-tabs a svg {
+    width: 14px; height: 14px; stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    vertical-align: -2px; margin-right: 4px;
+}
+.aw-card h2 svg {
+    width: 18px; height: 18px; stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    vertical-align: -3px; margin-right: 6px;
+}
+.aw-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.aw-stat {
+    background: #fff; border-radius: 14px; border: 1px solid #e8eaed; padding: 14px;
+}
+.aw-stat h3 { font-size: .85rem; color: #64748b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .04em; }
+.aw-stat .nums { display: flex; gap: 12px; flex-wrap: wrap; }
+.aw-stat .n { font-size: .9rem; }
+.aw-stat .n strong { display: block; font-size: 1.2rem; color: #0f766e; }
+.aw-card {
+    background: #fff; border-radius: 16px; border: 1px solid #e8eaed;
+    padding: 16px; margin-bottom: 14px;
+}
+.aw-card h2 { font-size: 1rem; margin-bottom: 12px; }
+.aw-card label { display: block; font-size: .8rem; color: #64748b; margin-bottom: 4px; font-weight: 600; }
+.aw-card select, .aw-card textarea, .aw-card input {
+    width: 100%; padding: 11px 12px; border-radius: 12px; border: 1px solid #e2e8f0;
+    margin-bottom: 10px; background: #f8fafc;
+}
+.aw-card textarea { min-height: 110px; font-family: ui-monospace, monospace; font-size: .85rem; }
+.aw-card button, .aw-btn {
+    padding: 11px 16px; border: none; border-radius: 12px;
+    background: #0f766e; color: #fff; font-weight: 700; cursor: pointer;
+}
+.aw-btn.secondary { background: #64748b; }
+.aw-btn.danger { background: #b91c1c; }
+.aw-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.aw-table th, .aw-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+.aw-table th { color: #94a3b8; font-weight: 600; }
+.code-cell { font-family: ui-monospace, monospace; font-weight: 700; color: #0f766e; word-break: break-all; }
+.aw-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.aw-tabs a {
+    padding: 8px 12px; border-radius: 999px; font-size: .8rem; font-weight: 600;
+    background: #f1f5f9; color: #475569;
+}
+.aw-tabs a:hover { background: #e2e8f0; }
+.staff-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 0; border-bottom: 1px solid #f1f5f9;
+}
+.staff-row:last-child { border-bottom: none; }
+.rpt-hero {
+    background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%);
+    color: #fff; border-radius: 16px; padding: 18px 16px; margin-bottom: 14px;
+}
+.rpt-hero .big { font-size: 1.6rem; font-weight: 800; margin: 4px 0; }
+.rpt-hero .sub { opacity: .9; font-size: .85rem; }
+.rpt-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: end; }
+.rpt-filters a, .rpt-filters button {
+    padding: 8px 12px; border-radius: 999px; font-size: .8rem; font-weight: 600;
+    background: #f1f5f9; color: #475569; border: none; cursor: pointer; text-decoration: none;
+}
+.rpt-filters a.active { background: #0f766e; color: #fff; }
+.rpt-filters input[type="date"] {
+    padding: 8px 10px; border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc; font-size: .8rem;
+}
+.rpt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.rpt-box {
+    background: #f8fafc; border-radius: 12px; padding: 12px; border: 1px solid #e8eaed;
+}
+.rpt-box h4 { font-size: .75rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+.rpt-box .row { display: flex; justify-content: space-between; font-size: .85rem; padding: 4px 0; }
+.rpt-box .row strong { color: #0f766e; }
+.rpt-bar-wrap { margin: 4px 0 8px; }
+.rpt-bar-bg { height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
+.rpt-bar-fill { height: 100%; background: linear-gradient(90deg, #0f766e, #14b8a6); border-radius: 999px; }
+@media (max-width: 480px) {
+    .rpt-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="aw-wrap">
+    <div class="aw-top">
+        <a href="{{ url_for('dashboard') }}" class="aw-back" aria-label="Rudi">
+            <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+        </a>
+        <h1>Admin — WiFi</h1>
+    </div>
+
+    <div class="aw-stats">
+        {% for loc in locations %}
+        <div class="aw-stat">
+            <h3>{{ loc|title }}</h3>
+            <div class="nums">
+                <div class="n"><strong>{{ stats[loc].available }}</strong>Available</div>
+                <div class="n"><strong>{{ stats[loc].used }}</strong>Used</div>
+                <div class="n"><strong>{{ stats[loc].trash }}</strong>Trash</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="aw-tabs">
+        <a href="#report"><svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Report</a>
+        <a href="#upload"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>Upload</a>
+        <a href="#used"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Used</a>
+        <a href="#trash"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Trash</a>
+        <a href="#staff"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Staff</a>
+    </div>
+
+    <!-- REPORT YA MAUZO -->
+    <div class="aw-card" id="report">
+        <h2><svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Report ya Mauzo</h2>
+
+        <div class="rpt-filters">
+            <a href="{{ url_for('admin_wifi', period='today') }}#report" class="{% if period == 'today' %}active{% endif %}">Leo</a>
+            <a href="{{ url_for('admin_wifi', period='week') }}#report" class="{% if period == 'week' %}active{% endif %}">Wiki 7</a>
+            <a href="{{ url_for('admin_wifi', period='month') }}#report" class="{% if period == 'month' %}active{% endif %}">Mwezi huu</a>
+            <a href="{{ url_for('admin_wifi', period='all') }}#report" class="{% if period == 'all' %}active{% endif %}">Zote</a>
+        </div>
+        <form method="get" action="{{ url_for('admin_wifi') }}#report" class="rpt-filters" style="margin-top:-6px">
+            <input type="hidden" name="period" value="custom">
+            <div>
+                <label style="font-size:.72rem;color:#94a3b8;display:block;margin-bottom:2px">Kuanzia</label>
+                <input type="date" name="from" value="{{ date_from or '' }}">
+            </div>
+            <div>
+                <label style="font-size:.72rem;color:#94a3b8;display:block;margin-bottom:2px">Hadi</label>
+                <input type="date" name="to" value="{{ date_to or '' }}">
+            </div>
+            <button type="submit" class="{% if period == 'custom' %}active{% endif %}" style="{% if period == 'custom' %}background:#0f766e;color:#fff{% endif %}">Chuja</button>
+        </form>
+
+        <div class="rpt-hero">
+            <div class="sub">Jumla ya mauzo
+                {% if period == 'today' %}(leo)
+                {% elif period == 'week' %}(siku 7)
+                {% elif period == 'month' %}(mwezi huu)
+                {% elif period == 'custom' %}(tarehe ulizochagua)
+                {% else %}(zote){% endif %}
+            </div>
+            <div class="big">{{ "{:,}".format(report_total_revenue) }} TZS</div>
+            <div class="sub">{{ report_total_count }} vocha zilizouzwa</div>
+        </div>
+
+        <div class="rpt-grid">
+            <div class="rpt-box">
+                <h4>Kwa eneo</h4>
+                {% for loc in locations %}
+                <div class="row">
+                    <span>{{ loc|title }}</span>
+                    <strong>{{ "{:,}".format(report_by_location[loc].revenue) }} · {{ report_by_location[loc].count }}</strong>
+                </div>
+                {% if report_total_revenue > 0 %}
+                <div class="rpt-bar-wrap">
+                    <div class="rpt-bar-bg">
+                        <div class="rpt-bar-fill" style="width: {{ (report_by_location[loc].revenue / report_total_revenue * 100)|round(1) }}%"></div>
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+            <div class="rpt-box">
+                <h4>Chanzo</h4>
+                <div class="row">
+                    <span>Online (app)</span>
+                    <strong>{{ "{:,}".format(report_by_source.online.revenue) }} · {{ report_by_source.online.count }}</strong>
+                </div>
+                {% if report_total_revenue > 0 %}
+                <div class="rpt-bar-wrap">
+                    <div class="rpt-bar-bg">
+                        <div class="rpt-bar-fill" style="width: {{ (report_by_source.online.revenue / report_total_revenue * 100)|round(1) }}%"></div>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="row">
+                    <span>Panel (cash)</span>
+                    <strong>{{ "{:,}".format(report_by_source.panel.revenue) }} · {{ report_by_source.panel.count }}</strong>
+                </div>
+                {% if report_total_revenue > 0 %}
+                <div class="rpt-bar-wrap">
+                    <div class="rpt-bar-bg">
+                        <div class="rpt-bar-fill" style="width: {{ (report_by_source.panel.revenue / report_total_revenue * 100)|round(1) }}%"></div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="rpt-box" style="margin-bottom:12px">
+            <h4>Kwa kifurushi</h4>
+            {% if report_by_package_list %}
+                {% for p in report_by_package_list %}
+                <div class="row">
+                    <span>{{ p.label }}{% if p.price %} ({{ "{:,}".format(p.price) }}){% endif %}</span>
+                    <strong>{{ "{:,}".format(p.revenue) }} · {{ p.count }}</strong>
+                </div>
+                {% if report_total_revenue > 0 %}
+                <div class="rpt-bar-wrap">
+                    <div class="rpt-bar-bg">
+                        <div class="rpt-bar-fill" style="width: {{ (p.revenue / report_total_revenue * 100)|round(1) }}%"></div>
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+            {% else %}
+                <p style="color:#94a3b8;font-size:.85rem;margin:0">Hakuna mauzo katika kipindi hiki.</p>
+            {% endif %}
+        </div>
+
+        {% if report_daily %}
+        <div class="rpt-box" style="margin-bottom:12px">
+            <h4>Kwa siku</h4>
+            <div style="overflow-x:auto">
+            <table class="aw-table">
+                <thead>
+                    <tr><th>Tarehe</th><th>Idadi</th><th>Mapato</th></tr>
+                </thead>
+                <tbody>
+                {% for d in report_daily %}
+                    <tr>
+                        <td>{{ d.date }}</td>
+                        <td>{{ d.count }}</td>
+                        <td><strong>{{ "{:,}".format(d.revenue) }} TZS</strong></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="rpt-box">
+            <h4>Mauzo ya hivi karibuni</h4>
+            {% if report_recent %}
+            <div style="overflow-x:auto">
+            <table class="aw-table">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Eneo</th>
+                        <th>Pkg</th>
+                        <th>Bei</th>
+                        <th>Chanzo</th>
+                        <th>Tarehe</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for v in report_recent %}
+                    <tr>
+                        <td class="code-cell">{{ v.code }}</td>
+                        <td>{{ v.location|title }}</td>
+                        <td>{{ v.package_name or '—' }}</td>
+                        <td>{{ "{:,}".format(v.price or 0) }}</td>
+                        <td>{{ v.source or '—' }}</td>
+                        <td>{% if v.used_at %}{{ v.used_at.strftime('%d/%m %H:%M') }}{% endif %}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}
+            <p style="color:#94a3b8;font-size:.85rem;margin:0">Hakuna mauzo bado.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="aw-card" id="upload">
+        <h2>Upload vocha (comma / line)</h2>
+        <form method="post">
+            <input type="hidden" name="action" value="upload">
+            <label>Eneo</label>
+            <select name="location" required>
+                {% for loc in locations %}
+                <option value="{{ loc }}">{{ loc|title }}</option>
+                {% endfor %}
+            </select>
+            <label>Namba za vocha (tenganisha kwa comma au line mpya)</label>
+            <textarea name="codes" required placeholder="ABC123, DEF456, GHI789&#10;au line moja kwa moja"></textarea>
+            <button type="submit">Pakia vocha</button>
+        </form>
+    </div>
+
+    <div class="aw-card" id="used">
+        <h2>Vocha zilizotumika (recent)</h2>
+        {% if recent_used %}
+        <div style="overflow-x:auto">
+        <table class="aw-table">
+            <thead>
+                <tr><th>Code</th><th>Eneo</th><th>Pkg</th><th>Chanzo</th><th>Tarehe</th></tr>
+            </thead>
+            <tbody>
+            {% for v in recent_used %}
+                <tr>
+                    <td class="code-cell">{{ v.code }}</td>
+                    <td>{{ v.location|title }}</td>
+                    <td>{{ v.package_name or '—' }}</td>
+                    <td>{{ v.source }}</td>
+                    <td>{% if v.used_at %}{{ v.used_at.strftime('%d/%m %H:%M') }}{% endif %}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <form method="post" style="margin-top:12px" onsubmit="return confirm('Hamisha used zote kwenda trash?')">
+            <input type="hidden" name="action" value="trash_used">
+            <button type="submit" class="aw-btn secondary">Hamisha used → trash</button>
+        </form>
+        {% else %}
+        <p style="color:#94a3b8;font-size:.9rem">Hakuna bado.</p>
+        {% endif %}
+    </div>
+
+    <div class="aw-card" id="trash">
+        <h2>Trash</h2>
+        {% if trash_list %}
+        <div style="overflow-x:auto">
+        <table class="aw-table">
+            <thead>
+                <tr><th>Code</th><th>Eneo</th><th>Pkg</th></tr>
+            </thead>
+            <tbody>
+            {% for v in trash_list %}
+                <tr>
+                    <td class="code-cell">{{ v.code }}</td>
+                    <td>{{ v.location|title }}</td>
+                    <td>{{ v.package_name or '—' }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <form method="post" style="margin-top:12px" onsubmit="return confirm('Futa trash kabisa?')">
+            <input type="hidden" name="action" value="empty_trash">
+            <button type="submit" class="aw-btn danger">Futa trash</button>
+        </form>
+        {% else %}
+        <p style="color:#94a3b8;font-size:.9rem">Trash tupu.</p>
+        {% endif %}
+    </div>
+
+    <div class="aw-card" id="staff">
+        <h2>Ruhusa ya Panel (staff)</h2>
+        <p style="font-size:.85rem;color:#64748b;margin-bottom:12px">
+            Ni admin pekee anayeweza kutoa ruhusa. Button ya PANEL haionekani kwa mtu asiyeidhinishwa.
+        </p>
+
+        <form method="get" action="{{ url_for('admin_wifi') }}#staff" style="margin-bottom:12px;display:flex;gap:8px">
+            <input type="text" name="q" value="{{ q or '' }}" placeholder="Tafuta user (jina / simu)" style="flex:1;padding:10px 12px;border-radius:12px;border:1px solid #e2e8f0">
+            <button type="submit" class="aw-btn secondary">Tafuta</button>
+        </form>
+
+        {% for u in search_users %}
+        <div class="staff-row">
+            <div>
+                <strong>{{ u.username }}</strong>
+                <div style="font-size:.78rem;color:#64748b">{{ u.phone }}
+                    {% if u.is_admin %} · Admin{% endif %}
+                    {% if u.is_wifi_staff %} · Panel{% endif %}
+                </div>
+            </div>
+            {% if not u.is_admin %}
+            <form method="post">
+                <input type="hidden" name="action" value="toggle_staff">
+                <input type="hidden" name="user_id" value="{{ u.id }}">
+                <button type="submit" class="aw-btn {% if u.is_wifi_staff %}secondary{% endif %}" style="padding:8px 12px;font-size:.8rem">
+                    {% if u.is_wifi_staff %}Ondoa{% else %}Ruhusu Panel{% endif %}
+                </button>
+            </form>
+            {% else %}
+            <span style="font-size:.8rem;color:#94a3b8">Admin</span>
+            {% endif %}
+        </div>
+        {% else %}
+        <p style="color:#94a3b8;font-size:.9rem">Tafuta user ili kutoa ruhusa.</p>
+        {% endfor %}
+
+        {% if staff_users %}
+        <h2 style="margin-top:18px;font-size:.95rem">Wenye ruhusa sasa</h2>
+        {% for u in staff_users %}
+        <div class="staff-row">
+            <div>
+                <strong>{{ u.username }}</strong>
+                <div style="font-size:.78rem;color:#64748b">{{ u.phone }}{% if u.is_admin %} · Admin{% endif %}</div>
+            </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
