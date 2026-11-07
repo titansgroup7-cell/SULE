@@ -785,7 +785,8 @@ def initiate_clickpesa_ussd(amount, order_reference, phone):
 
 
 def clean_payment_error(data, fallback="Malipo yameshindwa. Jaribu tena."):
-    """Toa ujumbe safi wa kibinadamu kutoka ClickPesa / exception — si dict ghafi."""
+    """Toa ujumbe safi wa kibinadamu — kamwe usionyeshe JSON au dict ghafi kwa user."""
+    import re
     msg = ""
     if data is None:
         msg = ""
@@ -795,14 +796,15 @@ def clean_payment_error(data, fallback="Malipo yameshindwa. Jaribu tena."):
             or data.get("error")
             or data.get("msg")
             or data.get("detail")
+            or data.get("errorMessage")
+            or data.get("error_description")
             or ""
         )
-        # ClickPesa inaweza kurudisha list
         if isinstance(msg, (list, tuple)):
             msg = " ".join(str(x) for x in msg if x)
         if not msg and data:
             for v in data.values():
-                if isinstance(v, str) and v.strip():
+                if isinstance(v, str) and v.strip() and not v.strip().startswith(("{", "[")):
                     msg = v
                     break
                 if isinstance(v, (list, tuple)) and v:
@@ -818,22 +820,34 @@ def clean_payment_error(data, fallback="Malipo yameshindwa. Jaribu tena."):
     if not isinstance(msg, str):
         msg = str(msg or "")
     msg = msg.strip()
-    # Ondoa mabano ya dict yaliyoandikwa kama string
-    if msg.startswith("{") and "message" in msg:
-        import re
+
+    # Ondoa JSON / dict / list zilizoandikwa kama string
+    if msg.startswith("{") or msg.startswith("[") or '"message"' in msg or "'message'" in msg:
         m = re.search(r"['\"]message['\"]\s*:\s*['\"]([^'\"]+)['\"]", msg)
         if m:
             msg = m.group(1)
         else:
-            msg = msg.replace("{", " ").replace("}", " ").replace("'", " ").replace('"', " ")
-            msg = " ".join(msg.split())
+            m2 = re.search(r"['\"]error['\"]\s*:\s*['\"]([^'\"]+)['\"]", msg)
+            if m2:
+                msg = m2.group(1)
+            else:
+                msg = ""
+
+    # Ondoa mabano na alama za JSON
+    msg = re.sub(r"[{}\[\]\"']", " ", msg)
+    msg = re.sub(r"\s+", " ", msg).strip()
+
+    # Usionyeshe majina ya huduma za malipo kwa user
+    for brand in ("clickpesa", "click pesa", "click-pesa"):
+        if brand in msg.lower():
+            msg = ""
+            break
 
     low = msg.lower()
-    # Tafsiri / ujumbe rafiki
-    if "insufficient funds" in low or "salio" in low or "top up" in low:
+    if "insufficient funds" in low or "salio" in low or "top up" in low or "balance" in low:
         return "Salio halitoshi kwenye akaunti ya malipo. Ongeza salio kisha ujaribu tena."
     if "timeout" in low or "timed out" in low:
-        return "Muda wa malipo umeisha (timeout). Jaribu tena."
+        return "Muda wa malipo umeisha. Jaribu tena."
     if "invalid phone" in low or "phone number" in low:
         return "Namba ya simu si sahihi. Hakikisha namba yenye pesa."
     if "network" in low and ("error" in low or "fail" in low):
@@ -842,14 +856,13 @@ def clean_payment_error(data, fallback="Malipo yameshindwa. Jaribu tena."):
         return "Malipo yameghairiwa. Jaribu tena ukiwa tayari."
     if "pin" in low and ("wrong" in low or "invalid" in low or "incorrect" in low):
         return "PIN si sahihi. Jaribu tena."
-    if not msg or msg.upper() in ("FAILED", "ERROR", "NONE"):
+    if "token" in low or "unauthorized" in low or "forbidden" in low or "api key" in low:
         return fallback
-    # Kata urefu, usiwe na mabano mengi
-    msg = msg.replace("{", "").replace("}", "").strip()
-    if len(msg) > 180:
-        msg = msg[:177] + "…"
+    if not msg or msg.upper() in ("FAILED", "ERROR", "NONE", "NULL"):
+        return fallback
+    if len(msg) > 160 or re.search(r"https?://|traceback|exception|stack", low):
+        return fallback
     return msg
-
 
 def normalize_phone(phone):
     if phone is None:
@@ -1735,7 +1748,7 @@ def _mark_payment_success(merchant_ref, extra=""):
             return True, "wifi"
         return False, "wifi not found"
 
-    # WiFi Install (Agiza WiFi) — baada ya malipo ombi linaenda kwa admin
+    # WiFi Install (Agiza WiFi) — baada ya malipo ombi linaenda kwa mtoa huduma
     winst = _parse_winst_pay_ref(merchant_ref)
     if winst:
         if winst.status in ("awaiting_payment", "payment_failed"):
@@ -1754,7 +1767,7 @@ def _mark_payment_success(merchant_ref, extra=""):
                     send_push_to_user(
                         winst.user_id,
                         "Malipo yamepokelewa",
-                        f"Ombi lako la {winst.network} WiFi limetumwa kwa admin. Tutawasiliana nawe.",
+                        f"Ombi lako la {winst.network} WiFi limetumwa kwa mtoa huduma wetu. Tutawasiliana nawe.",
                         url="/wifi",
                         tag=f"winst-ok-{winst.id}",
                     )
@@ -4676,7 +4689,7 @@ def wifi_install_form(network):
 @app.route("/wifi/agiza/pay/<int:req_id>", methods=["GET", "POST"])
 @login_required
 def wifi_install_pay(req_id):
-    """Lipa ada ya ufungaji wa WiFi (ClickPesa) — baada ya malipo ombi linaenda kwa admin."""
+    """Lipa ada ya ufungaji wa WiFi — baada ya malipo ombi linaenda kwa mtoa huduma."""
     user = get_current_user()
     req = WifiInstallRequest.query.get_or_404(req_id)
     if req.user_id and req.user_id != user.id and not user.is_admin:
@@ -4710,32 +4723,34 @@ def wifi_install_pay(req_id):
                 if ok:
                     flash("Ombi la malipo limetumwa kwenye simu yako. Weka PIN kuthibitisha.", "success")
                 else:
-                    reason = clean_payment_error(data, "Malipo yameshindwa kuanzishwa.")
+                    reason = clean_payment_error(data, "Malipo yameshindwa kuanzishwa. Jaribu tena.")
                     req.status = "payment_failed"
                     req.fail_reason = reason
                     db.session.commit()
                     flash(reason, "error")
             except Exception as e:
-                reason = clean_payment_error(str(e), "Hitilafu ya malipo.")
+                # Usifichue exception ghafi / JSON kwa user
+                print(f"wifi install pay error: {e}")
+                reason = clean_payment_error(str(e), "Malipo yameshindwa. Jaribu tena.")
                 req.status = "payment_failed"
                 req.fail_reason = reason
                 db.session.commit()
-                flash(f"Hitilafu ya malipo: {reason}", "error")
+                flash(reason, "error")
         else:
-            # fallback: no clickpesa — mark pending for admin (dev)
+            # fallback: malipo hayajawezeshwa — tuma moja kwa moja
             req.status = "pending"
             req.paid_at = datetime.utcnow()
             db.session.commit()
             try:
                 send_push_to_admins(
-                    "Ombi jipya la kuagiza WiFi (bila ClickPesa)",
+                    "Ombi jipya la kuagiza WiFi",
                     f"{req.full_name} · {req.network} · TSh {amount:,}",
                     url=url_for("admin_wifi_install"),
                     tag=f"wifi-install-{req.id}",
                 )
             except Exception as e:
                 print(f"wifi install push: {e}")
-            flash("Ombi limetumwa. (ClickPesa haijawezeshwa)", "success")
+            flash("Ombi lako limetumwa kwa mtoa huduma wetu. Tutawasiliana nawe hivi karibuni.", "success")
             return redirect(url_for("wifi_install"))
 
         return redirect(url_for("wifi_install_pay", req_id=req.id))

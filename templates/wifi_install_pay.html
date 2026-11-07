@@ -58,7 +58,7 @@
 <div class="wip-wrap">
     <div class="wip-hero">
         <h1>Lipa ada ya ufungaji</h1>
-        <p>Baada ya malipo kuthibitishwa, ombi lako linaenda kwa admin.</p>
+        <p>Baada ya malipo kuthibitishwa, ombi lako linaenda kwa mtoa huduma wetu.</p>
     </div>
 
     {% if last_fail %}
@@ -81,7 +81,7 @@
     </div>
 
     <form method="POST" class="wip-card" id="wipForm">
-        <h3>Malipo (ClickPesa)</h3>
+        <h3>Malipo</h3>
         <label class="wip-label" for="payment_phone">Namba ya kulipia (yenye hela)</label>
         <input class="wip-input" id="payment_phone" type="tel" name="payment_phone"
                inputmode="tel" autocomplete="tel"
@@ -92,7 +92,7 @@
         <ol class="wip-steps">
             <li>Bonyeza <strong>Lipa</strong>, ujumbe wa malipo utafika kwenye simu yako.</li>
             <li>Weka PIN yako kuthibitisha.</li>
-            <li>Malipo yakithibitishwa (webhook), ombi linaenda kwa admin.</li>
+            <li>Malipo yakithibitishwa, ombi linaenda kwa mtoa huduma wetu.</li>
         </ol>
 
         <button type="submit" class="wip-submit" id="wipBtn">Lipa TSh {{ "{:,}".format(amount) }}</button>
