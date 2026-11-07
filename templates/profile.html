@@ -15,8 +15,8 @@
 :root {
     --p-brand: #f05a00;
     --p-brand-2: #ff8a1f;
-    --p-soft: #fff3e9;
-    --p-bg: #f6f4f1;
+    --p-soft: #fff1e6;
+    --p-bg: #f5f2ee;
     --p-card: #ffffff;
     --p-ink: #1d1a17;
     --p-muted: #7a726b;
@@ -32,101 +32,120 @@ html, body { overflow-x: hidden; }
 .pf {
     min-height: 100vh;
     background: var(--p-bg);
-    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px));
     color: var(--p-ink);
     overflow-x: clip;
 }
 .pf svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .pf h1, .pf h2, .pf p { margin: 0; }
+.pf a { color: inherit; text-decoration: none; }
 .pf a:focus-visible, .pf button:focus-visible { outline: 3px solid var(--p-brand-2); outline-offset: 2px; }
 
 /* ---------- Hero ---------- */
 .pf-hero {
-    position: relative;
-    padding: calc(26px + env(safe-area-inset-top, 0px)) 20px 52px;
+    position: relative; z-index: 1;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 20px 64px;
     color: #fff;
     background:
-        radial-gradient(120% 100% at 100% 0%, rgba(255,190,110,.45) 0%, transparent 55%),
-        linear-gradient(150deg, #ff8a1f 0%, #f05a00 55%, #d63f00 100%);
-    border-radius: 0 0 30px 30px;
+        radial-gradient(110% 90% at 100% 0%, rgba(255,200,130,.5) 0%, transparent 55%),
+        linear-gradient(155deg, #ff8f26 0%, #f05a00 55%, #d63f00 100%);
+    border-radius: 0 0 32px 32px;
 }
 .pf-hero-row { display: flex; align-items: center; gap: 16px; max-width: 620px; margin: 0 auto; }
 .pf-avatar {
-    width: 72px; height: 72px; flex-shrink: 0;
+    width: 76px; height: 76px; flex-shrink: 0;
     display: grid; place-items: center;
-    border-radius: 22px;
+    border-radius: 50%;
     background: #fff; color: var(--p-brand);
-    font-size: 28px; font-weight: 800;
-    border: 3px solid rgba(255,255,255,.45);
-    box-shadow: 0 10px 22px rgba(120,30,0,.25);
+    font-size: 30px; font-weight: 800;
+    box-shadow: 0 0 0 5px rgba(255,255,255,.28), 0 12px 24px rgba(120,30,0,.28);
 }
 .pf-who { min-width: 0; }
-.pf-name { font-size: 1.45rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.15; word-break: break-word; }
-.pf-phone { margin-top: 5px; font-size: .9rem; opacity: .9; }
+.pf-hello { font-size: .8rem; font-weight: 600; opacity: .85; }
+.pf-name { margin-top: 2px; font-size: 1.5rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.15; word-break: break-word; }
+.pf-phone { margin-top: 4px; font-size: .9rem; opacity: .92; }
 .pf-tag {
     display: inline-flex; align-items: center; gap: 6px;
-    margin-top: 10px; padding: 4px 11px; border-radius: 999px;
-    background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28);
+    margin-top: 10px; padding: 4px 12px; border-radius: 999px;
+    background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.3);
     font-size: .74rem; font-weight: 700;
 }
 .pf-tag i { width: 7px; height: 7px; border-radius: 50%; background: #7dffa8; display: block; }
 
-/* ---------- Stats ---------- */
+/* ---------- Stats: kadi moja, safu tatu ---------- */
 .pf-stats {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
-    max-width: 620px; margin: -30px auto 22px; padding: 0 16px;
+    position: relative; z-index: 2;
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    max-width: 588px; margin: -38px 16px 22px;
+    background: var(--p-card); border: 1px solid var(--p-line); border-radius: 22px;
+    box-shadow: 0 10px 28px rgba(60,30,0,.12);
 }
-.pf-stat {
-    padding: 14px 10px; text-align: center;
-    background: var(--p-card); border: 1px solid var(--p-line); border-radius: 18px;
-    box-shadow: var(--p-shadow);
-}
-.pf-stat b { display: block; font-size: 1.5rem; line-height: 1; font-weight: 800; letter-spacing: -.02em; }
-.pf-stat span { display: block; margin-top: 6px; font-size: .72rem; font-weight: 700; color: var(--p-muted); }
-.pf-stat.ok b { color: var(--p-ok); }
+@media (min-width: 652px) { .pf-stats { margin-left: auto; margin-right: auto; } }
+.pf-stat { padding: 16px 8px 14px; text-align: center; }
+.pf-stat + .pf-stat { border-left: 1px solid var(--p-line); }
+.pf-stat b { display: block; font-size: 1.6rem; line-height: 1; font-weight: 800; letter-spacing: -.02em; }
+.pf-stat span { display: block; margin-top: 7px; font-size: .74rem; font-weight: 700; color: var(--p-muted); }
 .pf-stat.wait b { color: var(--p-brand); }
+.pf-stat.ok b { color: var(--p-ok); }
 
 /* ---------- Sections ---------- */
 .pf-section { max-width: 620px; margin: 0 auto 24px; padding: 0 16px; }
-.pf-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 4px 10px; }
-.pf-head h2 { font-size: 1.05rem; font-weight: 800; letter-spacing: -.01em; }
+.pf-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 4px 12px; }
+.pf-head h2 { font-size: 1.08rem; font-weight: 800; letter-spacing: -.01em; }
 .pf-head span { font-size: .8rem; font-weight: 600; color: var(--p-muted); }
 
-/* ---------- Menu ---------- */
-.pf-menu { background: var(--p-card); border: 1px solid var(--p-line); border-radius: 22px; overflow: hidden; box-shadow: var(--p-shadow); }
-.pf-link {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    min-height: 68px; padding: 12px 16px;
-    color: inherit; text-decoration: none;
-    border-bottom: 1px solid var(--p-line);
+/* ---------- Tiles ---------- */
+.pf-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pf-tile {
+    display: flex; flex-direction: column; gap: 12px;
+    min-height: 118px; padding: 14px;
+    background: var(--p-card); border: 1px solid var(--p-line); border-radius: 20px;
+    box-shadow: var(--p-shadow);
     -webkit-tap-highlight-color: transparent;
 }
-.pf-link:last-child { border-bottom: 0; }
-.pf-link:active { background: #faf7f3; }
-.pf-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.pf-tile:active { background: #faf7f3; }
+.pf-tile:last-child:nth-child(odd) { grid-column: 1 / -1; min-height: 0; flex-direction: row; align-items: center; }
 .pf-ico {
-    width: 44px; height: 44px; flex-shrink: 0;
-    display: grid; place-items: center; border-radius: 14px;
+    width: 46px; height: 46px; flex-shrink: 0;
+    display: grid; place-items: center; border-radius: 15px;
     background: var(--p-soft); color: var(--p-brand);
 }
-.pf-ico svg { width: 21px; height: 21px; }
-.pf-ico.danger { background: var(--p-bad-bg); color: var(--p-bad); }
-.pf-text strong { display: block; font-size: .95rem; font-weight: 700; }
-.pf-text small { display: block; margin-top: 2px; font-size: .78rem; color: var(--p-muted); line-height: 1.3; }
-.pf-arrow { color: #c4bcb3; display: flex; flex-shrink: 0; }
-.pf-arrow svg { width: 18px; height: 18px; stroke-width: 2.3; }
+.pf-ico svg { width: 22px; height: 22px; }
+.pf-tile.primary { background: linear-gradient(145deg, #ff8f26, #f05a00); border-color: transparent; color: #fff; }
+.pf-tile.primary .pf-ico { background: rgba(255,255,255,.22); color: #fff; }
+.pf-tile.primary small { color: rgba(255,255,255,.88); }
+.pf-tile strong { display: block; font-size: .98rem; font-weight: 800; }
+.pf-tile small { display: block; margin-top: 2px; font-size: .78rem; line-height: 1.3; color: var(--p-muted); }
+
+/* ---------- Logout ---------- */
+.pf-logout {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    min-height: 54px; margin-top: 12px;
+    background: var(--p-card); border: 1.5px solid #f3c9c4; border-radius: 18px;
+    color: var(--p-bad); font-weight: 800; font-size: .95rem;
+    -webkit-tap-highlight-color: transparent;
+}
+.pf-logout:active { background: var(--p-bad-bg); }
+.pf-logout svg { width: 20px; height: 20px; }
 
 /* ---------- Orders ---------- */
 .pf-orders { display: flex; flex-direction: column; gap: 10px; }
 .pf-order {
-    padding: 14px 16px; background: var(--p-card);
+    position: relative; overflow: hidden;
+    padding: 14px 16px 14px 20px; background: var(--p-card);
     border: 1px solid var(--p-line); border-radius: 18px; box-shadow: var(--p-shadow);
 }
+.pf-order::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: #d9d1c8; }
+.pf-order.st-pending::before, .pf-order.st-awaiting_payment::before { background: var(--p-brand-2); }
+.pf-order.st-processing::before, .pf-order.st-paid::before { background: #3b82d6; }
+.pf-order.st-completed::before { background: #2fa857; }
+.pf-order.st-failed::before, .pf-order.st-rejected::before { background: #e0584b; }
 .pf-order.list-item-hidden { display: none !important; }
-.pf-order-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.pf-order-amount { font-size: 1.02rem; font-weight: 800; }
-.pf-order-price { margin-top: 2px; font-size: .95rem; font-weight: 800; color: var(--p-brand); }
-.pf-order-meta { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--p-line); font-size: .8rem; color: var(--p-muted); line-height: 1.5; }
+.pf-order-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.pf-order-amount { font-size: 1.02rem; font-weight: 800; line-height: 1.25; }
+.pf-order-price { flex-shrink: 0; font-size: 1rem; font-weight: 800; color: var(--p-brand); white-space: nowrap; }
+.pf-order-bottom { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.pf-order-meta { font-size: .78rem; color: var(--p-muted); line-height: 1.4; min-width: 0; }
 .pf-order-meta b { color: var(--p-ink); font-weight: 700; }
 .pf-status {
     display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
@@ -150,9 +169,8 @@ html, body { overflow-x: hidden; }
 .pf-empty a {
     display: inline-flex; align-items: center; min-height: 44px; margin-top: 12px; padding: 0 20px;
     border-radius: 999px; background: linear-gradient(135deg, var(--p-brand-2), var(--p-brand));
-    color: #fff; font-weight: 800; font-size: .88rem; text-decoration: none;
+    color: #fff; font-weight: 800; font-size: .88rem;
 }
-
 .pf-more {
     width: 100%; min-height: 48px; margin-top: 10px; padding: 0 12px;
     border: 1.5px dashed #f6bf92; border-radius: 14px;
@@ -167,6 +185,7 @@ html, body { overflow-x: hidden; }
         <div class="pf-hero-row">
             <div class="pf-avatar" aria-hidden="true">{{ current_user.username[0]|upper }}</div>
             <div class="pf-who">
+                <div class="pf-hello">Karibu tena</div>
                 <h1 class="pf-name">{{ current_user.username }}</h1>
                 <p class="pf-phone">{{ current_user.phone }}</p>
                 <span class="pf-tag"><i></i>Akaunti hai</span>
@@ -191,77 +210,42 @@ html, body { overflow-x: hidden; }
 
     <section class="pf-section">
         <div class="pf-head">
-            <h2>Akaunti</h2>
-            <span>Simamia</span>
+            <h2>Huduma zako</h2>
+            <span>Njia za haraka</span>
         </div>
-        <div class="pf-menu">
-            <a href="{{ url_for('order') }}" class="pf-link">
-                <div class="pf-left">
-                    <div class="pf-ico">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"></rect><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M12 12v3"></path></svg>
-                    </div>
-                    <div class="pf-text">
-                        <strong>Omba Bando</strong>
-                        <small>Agiza MB au GB</small>
-                    </div>
-                </div>
-                <div class="pf-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
+        <div class="pf-tiles">
+            <a href="{{ url_for('order') }}" class="pf-tile primary">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg></div>
+                <div><strong>Omba Bando</strong><small>Agiza MB au GB</small></div>
             </a>
-
-            <a href="{{ url_for('chat') }}" class="pf-link">
-                <div class="pf-left">
-                    <div class="pf-ico">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                    </div>
-                    <div class="pf-text">
-                        <strong>Chat na Muuzaji</strong>
-                        <small>Wasiliana nasi moja kwa moja</small>
-                    </div>
-                </div>
-                <div class="pf-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
+            <a href="{{ url_for('chat') }}" class="pf-tile">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+                <div><strong>Chat</strong><small>Ongea na muuzaji</small></div>
             </a>
-
+            <a href="{{ url_for('my_applications') }}" class="pf-tile">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></div>
+                <div><strong>Maombi yangu</strong><small>Uwakala na nakala</small></div>
+            </a>
+            <a href="{{ url_for('wifi_history') }}" class="pf-tile">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/></svg></div>
+                <div><strong>Vocha zangu</strong><small>Historia ya WiFi</small></div>
+            </a>
             {% if current_user.is_admin %}
-            <a href="{{ url_for('dashboard') }}" class="pf-link">
-                <div class="pf-left">
-                    <div class="pf-ico">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="12" width="7" height="9" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect></svg>
-                    </div>
-                    <div class="pf-text">
-                        <strong>Dashboard</strong>
-                        <small>Simamia mfumo</small>
-                    </div>
-                </div>
-                <div class="pf-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
+            <a href="{{ url_for('dashboard') }}" class="pf-tile">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></div>
+                <div><strong>Dashboard</strong><small>Simamia mfumo</small></div>
             </a>
             {% endif %}
-
-            <a href="{{ url_for('settings') }}" class="pf-link">
-                <div class="pf-left">
-                    <div class="pf-ico">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                    </div>
-                    <div class="pf-text">
-                        <strong>Mipangilio</strong>
-                        <small>Badilisha taarifa za akaunti</small>
-                    </div>
-                </div>
-                <div class="pf-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
-            </a>
-
-            <a href="{{ url_for('logout') }}" class="pf-link">
-                <div class="pf-left">
-                    <div class="pf-ico danger">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                    </div>
-                    <div class="pf-text">
-                        <strong>Toka (Logout)</strong>
-                        <small>Toka kwenye akaunti</small>
-                    </div>
-                </div>
-                <div class="pf-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
+            <a href="{{ url_for('settings') }}" class="pf-tile">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+                <div><strong>Mipangilio</strong><small>Taarifa za akaunti</small></div>
             </a>
         </div>
+
+        <a href="{{ url_for('logout') }}" class="pf-logout">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Toka kwenye akaunti
+        </a>
     </section>
 
     <section class="pf-section">
@@ -272,22 +256,22 @@ html, body { overflow-x: hidden; }
 
         <div class="pf-orders" id="ordersList" data-limit="2">
             {% for order in orders %}
-            <article class="pf-order list-item{% if loop.index > 2 %} list-item-hidden{% endif %}">
+            <article class="pf-order st-{{ order.status }} list-item{% if loop.index > 2 %} list-item-hidden{% endif %}">
                 <div class="pf-order-top">
-                    <div>
-                        <div class="pf-order-amount">{{ order.amount }}</div>
-                        {% if order.price %}<div class="pf-order-price">TSh {{ "{:,}".format(order.price) }}</div>{% endif %}
+                    <div class="pf-order-amount">{{ order.amount }}</div>
+                    {% if order.price %}<div class="pf-order-price">TSh {{ "{:,}".format(order.price) }}</div>{% endif %}
+                </div>
+                <div class="pf-order-bottom">
+                    <div class="pf-order-meta">
+                        <b>{{ order.phone }}</b>
+                        {% if order.created_at %}<br>{{ order.created_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
                     </div>
                     <span class="pf-status {{ order.status }}">{{ status_labels.get(order.status, order.status) }}</span>
-                </div>
-                <div class="pf-order-meta">
-                    Namba: <b>{{ order.phone }}</b>
-                    {% if order.created_at %}<br>{{ order.created_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
                 </div>
             </article>
             {% else %}
             <div class="pf-empty">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"></rect><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
                 <strong>Hakuna oda bado</strong>
                 <p>Oda zako zitaonekana hapa baada ya kuagiza bando.</p>
                 <a href="{{ url_for('order') }}">Agiza bando</a>
