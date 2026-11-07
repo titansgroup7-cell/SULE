@@ -260,11 +260,7 @@
         </a>
         <div>
             <small>WiFi Vocha</small>
-<<<<<<< HEAD
             <h1>{{ location_label or wifi_location_label(location) }}</h1>
-=======
-            <h1>{{ location|title }}</h1>
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
         </div>
     </div>
 
@@ -322,11 +318,7 @@
                             Ingia ili kununua
                         </a>
                         {% elif n < 1 %}
-<<<<<<< HEAD
                         <p class="pkg-note">Vocha za {{ p.name }} zimeisha kwa {{ location_label or wifi_location_label(location) }}. Jaribu kifurushi kingine au baadaye.</p>
-=======
-                        <p class="pkg-note">Vocha za {{ p.name }} zimeisha kwa {{ location|title }}. Jaribu kifurushi kingine au baadaye.</p>
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
                         {% else %}
                         <form class="pkg-form" method="post" action="{{ url_for('wifi_buy') }}">
                             <input type="hidden" name="location" value="{{ location }}">

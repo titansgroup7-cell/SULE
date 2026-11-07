@@ -359,9 +359,6 @@ def wifi_location_label(location):
 # Ada ya huduma ya Uwakala/Lipa — inalipwa KABLA ombi halijaonekana kwa admin
 AGENCY_SERVICE_FEE = 5000
 
-# Ada ya huduma ya Uwakala/Lipa — inalipwa KABLA ombi halijaonekana kwa admin
-AGENCY_SERVICE_FEE = 5000
-
 
 class WifiVoucher(db.Model):
     """Vocher za WiFi — pool inayopakiwa na admin, inatumiwa na user au panel."""
@@ -4632,11 +4629,7 @@ def wifi_buy():
 
     stock, _typed, _generic = _wifi_stock_by_package(location)
     if stock.get(pkg["key"], 0) < 1:
-<<<<<<< HEAD
         flash(f"Samahani, vocha za {pkg['name']} ({wifi_location_label(location)}) zimeisha. Jaribu kifurushi kingine au baadaye.", "error")
-=======
-        flash(f"Samahani, vocha za {pkg['name']} ({location.title()}) zimeisha. Jaribu kifurushi kingine au baadaye.", "error")
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
         return redirect(url_for("wifi_location", location=location))
 
     payment_phone = normalize_phone(payment_phone) if payment_phone else ""

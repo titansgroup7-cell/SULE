@@ -261,11 +261,7 @@
             </div>
             <div class="wh-ticket-foot">
                 <div class="wh-meta">
-<<<<<<< HEAD
                     <strong>{{ v.package_name or '—' }}</strong> · {{ WIFI_LOCATION_LABELS.get(v.location, v.location|title) }}<br>
-=======
-                    <strong>{{ v.package_name or '—' }}</strong> · {{ v.location|title }}<br>
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
                     {{ "{:,}".format(v.price) }} TZS{% if v.used_at %} · {{ v.used_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
                 </div>
                 <button type="button" class="wh-copy" data-code="{{ v.code }}">
@@ -311,11 +307,7 @@
                 <div class="wh-price">{{ "{:,}".format(p.price) }} <small>TZS</small></div>
             </div>
             <div class="wh-meta">
-<<<<<<< HEAD
                 <strong>{{ p.package_name }}</strong> · {{ WIFI_LOCATION_LABELS.get(p.location, p.location|title) }}<br>
-=======
-                <strong>{{ p.package_name }}</strong> · {{ p.location|title }}<br>
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
                 Ref: <span class="wh-ref">{{ p.order_reference or '—' }}</span>
                 {% if p.created_at %}<br><span class="wh-date">{{ p.created_at.strftime('%d/%m/%Y %H:%M') }}</span>{% endif %}
             </div>

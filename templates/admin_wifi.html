@@ -199,11 +199,7 @@ html, body { overflow-x: hidden; }
     <div class="aw-sum">
         {% for loc in locations %}
         <div class="aw-sum-card">
-<<<<<<< HEAD
             <div class="loc">{{ WIFI_LOCATION_LABELS.get(loc, loc|title) }}</div>
-=======
-            <div class="loc">{{ loc|title }}</div>
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
             <span class="num">{{ stats[loc].available }}</span>
             <div class="sub">zipo · {{ stats[loc].used }} zimetumika</div>
         </div>
@@ -219,11 +215,7 @@ html, body { overflow-x: hidden; }
             <h3 class="aw-h3">Stock iliyopo</h3>
             {% for loc in locations %}
             <div class="aw-card">
-<<<<<<< HEAD
                 <div class="aw-h3" style="margin-bottom:10px">{{ WIFI_LOCATION_LABELS.get(loc, loc|title) }}</div>
-=======
-                <div class="aw-h3" style="margin-bottom:10px">{{ loc|title }}</div>
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
                 <div class="aw-stock">
                     {% for p in packages %}
                     {% set n = stock_matrix[loc].by_package[p.key] %}
@@ -248,11 +240,7 @@ html, body { overflow-x: hidden; }
                 {% for loc in locations %}
                 <label class="{% if loop.first %}on{% endif %}">
                     <input type="radio" name="location" value="{{ loc }}" {% if loop.first %}checked{% endif %} required>
-<<<<<<< HEAD
                     {{ WIFI_LOCATION_LABELS.get(loc, loc|title) }}
-=======
-                    {{ loc|title }}
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
                 </label>
                 {% endfor %}
             </div>
@@ -297,11 +285,7 @@ html, body { overflow-x: hidden; }
                 <div class="main">
                     <div class="t aw-code">{{ v.code }}</div>
                     <div class="m">
-<<<<<<< HEAD
                         {{ v.package_name or '—' }} · {{ WIFI_LOCATION_LABELS.get(v.location, v.location|title) }}
-=======
-                        {{ v.package_name or '—' }} · {{ v.location|title }}
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
                         · {{ 'Panel' if v.source == 'panel' else 'Mtandaoni' }}
                         {% if v.used_by %}· {{ v.used_by.username }}{% endif %}<br>
                         {% if v.used_at %}{{ v.used_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
@@ -333,11 +317,7 @@ html, body { overflow-x: hidden; }
                 <div class="main">
                     <div class="t aw-code">{{ v.code }}</div>
                     <div class="m">
-<<<<<<< HEAD
                         {{ v.package_name or '—' }} · {{ WIFI_LOCATION_LABELS.get(v.location, v.location|title) }}<br>
-=======
-                        {{ v.package_name or '—' }} · {{ v.location|title }}<br>
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
                         {% if v.used_at %}{{ v.used_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
                     </div>
                 </div>
@@ -477,11 +457,7 @@ html, body { overflow-x: hidden; }
                 {% for loc in locations %}
                 <div class="aw-row">
                     <div class="main">
-<<<<<<< HEAD
                         <div class="t">{{ WIFI_LOCATION_LABELS.get(loc, loc|title) }}</div>
-=======
-                        <div class="t">{{ loc|title }}</div>
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
                         <div class="m">Vocha {{ report_by_location[loc].count }}</div>
                     </div>
                     <div class="end">{{ "{:,}".format(report_by_location[loc].revenue) }}</div>
@@ -555,11 +531,7 @@ html, body { overflow-x: hidden; }
                     <div class="main">
                         <div class="t aw-code">{{ v.code }}</div>
                         <div class="m">
-<<<<<<< HEAD
                             {{ v.package_name or '—' }} · {{ WIFI_LOCATION_LABELS.get(v.location, v.location|title) }} · {{ 'Panel' if v.source == 'panel' else 'Mtandaoni' }}<br>
-=======
-                            {{ v.package_name or '—' }} · {{ v.location|title }} · {{ 'Panel' if v.source == 'panel' else 'Mtandaoni' }}<br>
->>>>>>> 99d03a6b718857195a4740e00bf49637956d1223
                             {% if v.used_at %}{{ v.used_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
                         </div>
                     </div>
