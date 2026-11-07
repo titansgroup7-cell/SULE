@@ -644,87 +644,267 @@
         margin-top: 8px;
     }
 </style>
+<style>
+/* =========================================================
+   Dashboard refresh — loads after the original rules and
+   overrides them. Scoped to .dx (page) and .dx-drawer.
+   ========================================================= */
+:root {
+    --d-brand: #e9560a;
+    --d-brand-2: #ff8a1f;
+    --d-ink: #1d1a17;
+    --d-muted: #7a726b;
+    --d-line: #ebe5de;
+    --d-soft: #fff4ea;
+    --d-field: #fbfaf8;
+    --d-ok: #1f7a3d;     --d-ok-bg: #e3f4e8;
+    --d-warn: #a85400;   --d-warn-bg: #fff0d9;
+    --d-bad: #b42318;    --d-bad-bg: #fde8e6;
+    --d-info: #1d5fb4;   --d-info-bg: #e3eefc;
+    --d-shadow: 0 1px 2px rgba(60,30,0,.05), 0 6px 20px rgba(60,30,0,.07);
+}
 
-<header class="topbar">
+/* ---------- Header ---------- */
+.dx-head {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px;
+    background: rgba(255,255,255,.94);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--d-line);
+}
+.dx-brand { font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; color: var(--d-ink); line-height: 1.15; }
+.dx-brand span { color: var(--d-brand); }
+.dx-sub { font-size: .72rem; font-weight: 600; color: var(--d-muted); margin-top: 2px; }
+.dx-head-actions { display: flex; align-items: center; gap: 8px; }
+.dx-iconbtn {
+    width: 44px; height: 44px; border-radius: 14px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--d-line); background: #fff; color: var(--d-ink);
+    cursor: pointer; text-decoration: none; flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+.dx-iconbtn svg, .dx-drawer svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dx-iconbtn svg { width: 21px; height: 21px; }
+.dx-iconbtn.primary { background: linear-gradient(135deg, var(--d-brand-2), var(--d-brand)); color: #fff; border-color: transparent; box-shadow: 0 6px 14px rgba(233,86,10,.28); }
+.dx-iconbtn:focus-visible, .dx-stat:focus-visible, .dx-drawer .nav-tab:focus-visible,
+.dx .btn:focus-visible, .dx .see-more-btn:focus-visible, .dx .tangazo-toggle-btn:focus-visible {
+    outline: 3px solid var(--d-brand-2); outline-offset: 2px;
+}
+
+/* ---------- Drawer ---------- */
+.dx-drawer.admin-drawer { width: min(320px, 88vw); background: #fff; border-radius: 24px 0 0 24px; }
+.dx-drawer .admin-drawer-head { padding: calc(16px + env(safe-area-inset-top, 0px)) 18px 14px; border-bottom: 1px solid var(--d-line); }
+.dx-drawer .admin-drawer-head strong { font-size: 1.05rem; letter-spacing: -.01em; }
+.dx-drawer .admin-drawer-close { width: 40px; height: 40px; background: var(--d-field); border: 1px solid var(--d-line); color: var(--d-ink); }
+.dx-drawer .nav-tabs { padding: 12px 12px calc(20px + env(safe-area-inset-bottom, 0px)); gap: 2px; }
+.dx-drawer .nav-tab {
+    min-height: 48px; padding: 0 12px; gap: 10px;
+    border-radius: 14px; font-size: .92rem; font-weight: 700; color: var(--d-ink);
+    text-decoration: none; -webkit-tap-highlight-color: transparent;
+}
+.dx-drawer .nav-tab .lbl { display: inline-flex; align-items: center; gap: 12px; }
+.dx-drawer .nav-tab .ico { width: 20px; height: 20px; color: var(--d-muted); flex-shrink: 0; }
+.dx-drawer .nav-tab:hover { background: var(--d-soft); }
+.dx-drawer .nav-tab.active { background: var(--d-soft); color: var(--d-brand); box-shadow: inset 3px 0 0 var(--d-brand); }
+.dx-drawer .nav-tab.active .ico { color: var(--d-brand); }
+.dx-drawer .nav-tab .count { margin: 0; padding: 2px 9px; background: #efe9e2; color: var(--d-ink); font-size: .74rem; }
+.dx-drawer .nav-tab.active .count { background: var(--d-brand); color: #fff; }
+.dx-drawer .nav-sep { height: 1px; background: var(--d-line); margin: 8px 6px; }
+
+/* ---------- Stats ---------- */
+.dx-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 22px; }
+.dx-stat {
+    position: relative; text-align: left; font: inherit; color: inherit;
+    padding: 14px 14px 13px; border-radius: 18px;
+    background: #fff; border: 1px solid var(--d-line); box-shadow: var(--d-shadow);
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.dx-stat-label { display: block; font-size: .78rem; font-weight: 700; color: var(--d-muted); }
+.dx-stat-num { display: block; margin-top: 6px; font-size: 1.9rem; line-height: 1; font-weight: 800; letter-spacing: -.02em; color: var(--d-ink); }
+.dx-stat.is-alert { border-color: #ffc89a; background: linear-gradient(180deg, #fff9f2, #fff); }
+.dx-stat.is-alert .dx-stat-num { color: var(--d-brand); }
+.dx-stat.is-alert::after {
+    content: ""; position: absolute; top: 14px; right: 14px;
+    width: 9px; height: 9px; border-radius: 50%; background: var(--d-brand);
+    box-shadow: 0 0 0 4px rgba(233,86,10,.16);
+}
+
+/* ---------- Section titles ---------- */
+.dx .dash-section-title { font-size: 1.2rem; font-weight: 800; letter-spacing: -.01em; color: var(--d-ink); margin: 0 0 4px; }
+.dx .dash-section-sub { font-size: .84rem; line-height: 1.45; color: var(--d-muted); margin: 0 0 14px; }
+.dx .muted { color: var(--d-muted); }
+
+/* ---------- Tab switch: one quick fade ---------- */
+.dx .tab-panel.active { animation: none; }
+
+/* ---------- Cards ---------- */
+.dx .card, .dx .application-card, .dx .slide-add-card, .dx .slide-item-card,
+.dx .users-table-wrap, .dx .user-orders-box {
+    border: 1px solid var(--d-line); border-radius: 18px; background: #fff; box-shadow: var(--d-shadow);
+}
+.dx .application-card { margin-bottom: 12px; }
+.dx .application-code { font-weight: 800; color: var(--d-ink); }
+.dx .application-network { color: var(--d-muted); font-weight: 600; }
+.dx .user-orders-box, .dx .users-table-wrap { box-shadow: none; }
+.dx .slide-meta-bar { background: var(--d-field); border-top: 1px solid var(--d-line); }
+.dx .empty-slides { border: 1.5px dashed var(--d-line); border-radius: 18px; color: var(--d-muted); }
+
+/* ---------- Status pills ---------- */
+.dx .status {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 11px; border-radius: 999px; border: 0;
+    font-size: .76rem; font-weight: 800; line-height: 1.3;
+}
+.dx .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.dx .status.pending, .dx .status.awaiting_payment, .dx .status.wait-pay { background: var(--d-warn-bg); color: var(--d-warn); border: 0; }
+.dx .status.processing { background: var(--d-info-bg); color: var(--d-info); }
+.dx .status.paid, .dx .status.payment-ok, .dx .status.completed { background: var(--d-ok-bg); color: var(--d-ok); border: 0; }
+.dx .status.rejected, .dx .status.pay-fail, .dx .status.payment-failed { background: var(--d-bad-bg); color: var(--d-bad); border: 0; }
+.dx .badge-blocked { background: var(--d-bad-bg); color: var(--d-bad); padding: 2px 8px; font-size: .7rem; }
+.dx .badge-admin { background: var(--d-ok-bg); color: var(--d-ok); padding: 2px 8px; font-size: .7rem; }
+.dx .meta-time { color: var(--d-muted); font-size: .78rem; }
+
+/* ---------- Buttons & inputs ---------- */
+.dx .btn { min-height: 44px; border-radius: 12px; font-weight: 800; -webkit-tap-highlight-color: transparent; }
+.dx .btn-danger-soft { background: var(--d-bad-bg) !important; color: var(--d-bad) !important; }
+.dx .input {
+    min-height: 48px; padding-inline: 14px; border-radius: 12px;
+    border: 1.5px solid var(--d-line); background: var(--d-field);
+    font-size: 16px; color: var(--d-ink);
+}
+.dx .input:focus { outline: none; border-color: var(--d-brand-2); box-shadow: 0 0 0 3px rgba(255,138,31,.22); }
+.dx .slide-form-grid label { font-size: .8rem; font-weight: 700; color: var(--d-muted); }
+.dx .user-search-bar .search-icon-btn { border-radius: 12px; min-height: 48px; background: linear-gradient(135deg, var(--d-brand-2), var(--d-brand)); }
+
+/* ---------- Dashed action buttons ---------- */
+.dx .see-more-btn, .dx .tangazo-toggle-btn {
+    min-height: 48px; border: 1.5px dashed #f6bf92; border-radius: 14px;
+    background: var(--d-soft); color: var(--d-brand); font-weight: 800;
+}
+.dx .see-more-btn.expanded { background: var(--d-field); border-color: var(--d-line); color: var(--d-muted); }
+.dx .hint-box { background: var(--d-soft); border: 1px solid #ffdcb8; color: #8a4a00; border-radius: 14px; }
+
+/* ---------- Users table ---------- */
+.dx .users-table th { text-transform: none; letter-spacing: 0; font-size: .76rem; font-weight: 700; color: var(--d-muted); background: var(--d-field); border-bottom: 1px solid var(--d-line); }
+.dx .users-table td { border-bottom: 1px solid #f3eee8; }
+.dx .users-table tr.user-row:hover { background: var(--d-soft); }
+.dx .users-table tr.user-row.active { background: var(--d-soft); box-shadow: inset 3px 0 0 var(--d-brand); }
+.dx .user-detail-row td { background: var(--d-field); }
+
+/* ---------- Nakala detail ---------- */
+.dx .nk-detail-panel { background: var(--d-field); border: 1px solid var(--d-line); border-radius: 16px; }
+.dx .nk-detail-head { background: #fff; border-bottom: 1px solid var(--d-line); min-height: 48px; }
+.dx .nk-section-lbl { text-transform: none; letter-spacing: 0; font-size: .8rem; color: var(--d-brand); }
+.dx .nk-row { border-bottom: 1px solid #f0ebe4; }
+.dx .nk-copy-btn { min-height: 28px; background: #efe9e2; }
+.dx .nk-doc-link { background: var(--d-soft); border: 1px solid #ffdcb8; color: var(--d-warn); border-radius: 12px; min-height: 44px; }
+
+/* ---------- Layout tuli: hakuna kusogea pembeni, hakuna animation ---------- */
+html, body { overflow-x: hidden; }
+.dx { max-width: 100%; overflow-x: clip; touch-action: pan-y; }
+.dx img, .dx video { max-width: 100%; }
+.dx .users-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.dx *, .dx-drawer *, .dx-head * { animation: none !important; }
+.dx .tab-panel.active { animation: none; }
+.dx-stat, .dx .btn, .dx .see-more-btn, .dx .tangazo-toggle-btn,
+.dx .search-icon-btn { transition: none; }
+.dx-stat:active, .dx .btn:active, .dx .see-more-btn:active,
+.dx .tangazo-toggle-btn:active, .dx .search-icon-btn:active { transform: none; }
+.admin-drawer { transition: none; }
+</style>
+
+<header class="dx-head">
     <div>
-        <div class="brand">Admin <span>Dashboard</span></div>
-        <div class="muted">MR. SULE DIGITAL SERVICES BUSINESS</div>
+        <div class="dx-brand">Admin <span>Dashboard</span></div>
+        <div class="dx-sub">Mr. Sule Digital Services Business</div>
     </div>
-    <div class="topbar-actions">
-        <button type="button" class="admin-menu-btn" id="adminMenuBtn" aria-label="Menu">
-            <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    <div class="dx-head-actions">
+        <button type="button" class="dx-iconbtn primary admin-menu-btn" id="adminMenuBtn" aria-label="Fungua menu" aria-controls="adminDrawer">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
-        <a href="{{ url_for('home') }}" class="icon-btn">←</a>
+        <a href="{{ url_for('home') }}" class="dx-iconbtn" aria-label="Rudi nyumbani">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+        </a>
     </div>
 </header>
 
 <!-- Admin hamburger drawer -->
 <div class="admin-drawer-overlay" id="adminDrawerOverlay"></div>
-<aside class="admin-drawer" id="adminDrawer" aria-hidden="true">
+<aside class="admin-drawer dx-drawer" id="adminDrawer" role="dialog" aria-modal="true" aria-label="Menu" aria-hidden="true">
     <div class="admin-drawer-head">
         <strong>Menu</strong>
-        <button type="button" class="admin-drawer-close" id="adminDrawerClose" aria-label="Funga">×</button>
+        <button type="button" class="admin-drawer-close" id="adminDrawerClose" aria-label="Funga">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
     </div>
     <div class="nav-tabs">
         <button type="button" class="nav-tab active" data-tab="orders">
-            <span>📦 Oda za Bando</span>
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>Oda za Bando</span>
             {% if pending_count %}<span class="count">{{ pending_count }}</span>{% endif %}
         </button>
         <button type="button" class="nav-tab" data-tab="messages">
-            <span>💬 Ujumbe</span>
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-5.4A8 8 0 1 1 21 12z"/></svg>Ujumbe</span>
             {% if chat_unread %}<span class="count">{{ chat_unread }}</span>{% elif chat_threads %}<span class="count">{{ chat_threads|length }}</span>{% endif %}
         </button>
         <button type="button" class="nav-tab" data-tab="nakala">
-            <span>📄 Nakala</span>
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>Nakala</span>
             {% if nakala_pending %}<span class="count">{{ nakala_pending }}</span>{% endif %}
         </button>
         <button type="button" class="nav-tab" data-tab="agency">
-            <span>🏪 Uwakala</span>
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12v8h14v-8"/></svg>Uwakala</span>
             {% if agency_pending %}<span class="count">{{ agency_pending }}</span>{% endif %}
         </button>
         <button type="button" class="nav-tab" data-tab="users">
-            <span>Users</span>
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></svg>Users</span>
             {% if users_count %}<span class="count">{{ users_count }}</span>{% endif %}
         </button>
         <button type="button" class="nav-tab" data-tab="announcement">
-            <span>📢 Matangazo</span>
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11v2a1 1 0 0 0 1 1h3l8 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M18.5 8.5a5 5 0 0 1 0 7"/></svg>Matangazo</span>
         </button>
         <button type="button" class="nav-tab" data-tab="trash">
-            <span>🗑️ Trash</span>
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6"/></svg>Trash</span>
             {% if trash_count %}<span class="count">{{ trash_count }}</span>{% endif %}
         </button>
+        <div class="nav-sep" role="separator"></div>
         <button type="button" class="nav-tab" data-tab="account">
-            <span>👤 Akaunti Yangu</span>
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Akaunti Yangu</span>
         </button>
-        <a href="{{ url_for('admin_wifi') }}" class="nav-tab" style="text-decoration:none;">
-            <span style="display:inline-flex;align-items:center;gap:6px;">
-                <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1.5" fill="currentColor" stroke="none"/></svg>
-                WiFi
-            </span>
+        <a href="{{ url_for('admin_wifi') }}#staff" class="nav-tab">
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></svg>WiFi Staff</span>
+        </a>
+        <a href="{{ url_for('admin_wifi') }}#report" class="nav-tab">
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>WiFi Report</span>
+        </a>
+        <a href="{{ url_for('admin_wifi') }}" class="nav-tab">
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/></svg>WiFi</span>
+        </a>
+        <a href="{{ url_for('admin_wifi_install') }}" class="nav-tab">
+            <span class="lbl"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><circle cx="12" cy="12" r="3"/></svg>Agiza WiFi</span>
         </a>
     </div>
 </aside>
 
-<div class="page">
+<div class="page dx">
 
     <!-- Stats -->
-    <div class="network-grid" style="margin-bottom:20px;">
-        <div class="card" style="margin:0; text-align:center;">
-            <div class="muted" style="font-size:12px;">Users</div>
-            <strong style="font-size:26px; display:block; margin-top:4px;">{{ users_count }}</strong>
-        </div>
-        <div class="card" style="margin:0; text-align:center;">
-            <div class="muted" style="font-size:12px;">Bando Pending</div>
-            <strong style="font-size:26px; display:block; margin-top:4px;">{{ pending_count }}</strong>
-        </div>
-        <div class="card" style="margin:0; text-align:center;">
-            <div class="muted" style="font-size:12px;">Agency Pending</div>
-            <strong style="font-size:26px; display:block; margin-top:4px;">{{ agency_pending }}</strong>
-        </div>
-        <div class="card" style="margin:0; text-align:center;">
-            <div class="muted" style="font-size:12px;">Nakala Pending</div>
-            <strong style="font-size:26px; display:block; margin-top:4px;">{{ nakala_pending or 0 }}</strong>
-        </div>
+    <div class="dx-stats">
+        <button type="button" class="dx-stat" onclick="openDashTab('users')">
+            <span class="dx-stat-label">Users</span>
+            <span class="dx-stat-num">{{ users_count }}</span>
+        </button>
+        <button type="button" class="dx-stat{% if pending_count %} is-alert{% endif %}" onclick="openDashTab('orders')">
+            <span class="dx-stat-label">Bando pending</span>
+            <span class="dx-stat-num">{{ pending_count }}</span>
+        </button>
+        <button type="button" class="dx-stat{% if agency_pending %} is-alert{% endif %}" onclick="openDashTab('agency')">
+            <span class="dx-stat-label">Agency pending</span>
+            <span class="dx-stat-num">{{ agency_pending }}</span>
+        </button>
+        <button type="button" class="dx-stat{% if nakala_pending %} is-alert{% endif %}" onclick="openDashTab('nakala')">
+            <span class="dx-stat-label">Nakala pending</span>
+            <span class="dx-stat-num">{{ nakala_pending or 0 }}</span>
+        </button>
     </div>
 
     <!-- ==================== ODA ZA BANDO ==================== -->
@@ -1550,7 +1730,6 @@ function toggleUserDetail(id) {
         el.classList.add('open');
         if (row) row.classList.add('active');
         if (arrow) arrow.textContent = '▾';
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 }
 
@@ -1583,7 +1762,6 @@ function toggleSeeMore(btn) {
         btn.setAttribute('data-expanded', '0');
         btn.classList.remove('expanded');
         btn.textContent = 'See more (' + (items.length - limit) + ' zaidi)';
-        wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else {
         items.forEach(function(el) { el.classList.remove('list-item-hidden'); });
         btn.setAttribute('data-expanded', '1');
@@ -1604,7 +1782,6 @@ function toggleSlideEdit(id) {
     });
     if (!wasOpen) {
         el.classList.add('open');
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 }
 
@@ -1619,7 +1796,6 @@ function toggleTangazoForm() {
     if (icon) icon.textContent = open ? '−' : '＋';
     if (text) text.textContent = open ? 'Funga fomu' : 'Ongeza Tangazo Jipya';
     if (open) {
-        wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 }
 
@@ -1681,6 +1857,10 @@ function fallbackCopy(text) {
     catch(e) { alert('Imeshindwa kunakili. Nakili kwa mkono.'); }
     document.body.removeChild(ta);
 }
+// Funga menu kwa kitufe cha Esc
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeAdminDrawer();
+});
 </script>
 
 {% endblock %}

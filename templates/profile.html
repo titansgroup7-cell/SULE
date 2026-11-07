@@ -1,460 +1,287 @@
 {% extends "base.html" %}
 {% block title %}Profile{% endblock %}
 {% block content %}
+{% set status_labels = {
+    'pending': 'Inasubiri',
+    'awaiting_payment': 'Inasubiri malipo',
+    'paid': 'Imelipwa',
+    'processing': 'Inashughulikiwa',
+    'completed': 'Imekamilika',
+    'failed': 'Imeshindwa',
+    'rejected': 'Imekataliwa'
+} %}
+{% set waiting_states = ['pending', 'awaiting_payment', 'paid', 'processing'] %}
 <style>
 :root {
-    --primary: #ff7800;
-    --primary-dark: #e84f00;
-    --primary-soft: #fff3e9;
-    --bg: #f5f6f8;
-    --card: #ffffff;
-    --text: #171717;
-    --muted: #8b8f98;
-    --border: rgba(0,0,0,.07);
-    --radius-xl: 22px;
+    --p-brand: #f05a00;
+    --p-brand-2: #ff8a1f;
+    --p-soft: #fff1e6;
+    --p-bg: #f5f2ee;
+    --p-card: #ffffff;
+    --p-ink: #1d1a17;
+    --p-muted: #7a726b;
+    --p-line: #ebe5de;
+    --p-ok: #1f7a3d;   --p-ok-bg: #e3f4e8;
+    --p-warn: #a85400; --p-warn-bg: #fff0d9;
+    --p-info: #1d5fb4; --p-info-bg: #e3eefc;
+    --p-bad: #b42318;  --p-bad-bg: #fde8e6;
+    --p-shadow: 0 1px 2px rgba(60,30,0,.05), 0 8px 24px rgba(60,30,0,.07);
 }
-.profile-page {
+html, body { overflow-x: hidden; }
+.pf, .pf * { box-sizing: border-box; }
+.pf {
     min-height: 100vh;
-    background: var(--bg);
-    padding-bottom: 40px;
+    background: var(--p-bg);
+    padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+    color: var(--p-ink);
+    overflow-x: clip;
 }
-.profile-hero {
-    padding: 28px 20px 30px;
-    color: white;
-    background: linear-gradient(135deg, #ff8500, #f05200 55%, #d93b00);
-    border-radius: 0 0 28px 28px;
+.pf svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pf h1, .pf h2, .pf p { margin: 0; }
+.pf a { color: inherit; text-decoration: none; }
+.pf a:focus-visible, .pf button:focus-visible { outline: 3px solid var(--p-brand-2); outline-offset: 2px; }
+
+/* ---------- Hero ---------- */
+.pf-hero {
+    position: relative; z-index: 1;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 20px 64px;
+    color: #fff;
+    background:
+        radial-gradient(110% 90% at 100% 0%, rgba(255,200,130,.5) 0%, transparent 55%),
+        linear-gradient(155deg, #ff8f26 0%, #f05a00 55%, #d63f00 100%);
+    border-radius: 0 0 32px 32px;
 }
-.profile-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 22px;
+.pf-hero-row { display: flex; align-items: center; gap: 16px; max-width: 620px; margin: 0 auto; }
+.pf-avatar {
+    width: 76px; height: 76px; flex-shrink: 0;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: #fff; color: var(--p-brand);
+    font-size: 30px; font-weight: 800;
+    box-shadow: 0 0 0 5px rgba(255,255,255,.28), 0 12px 24px rgba(120,30,0,.28);
 }
-.profile-label {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    opacity: 0.8;
+.pf-who { min-width: 0; }
+.pf-hello { font-size: .8rem; font-weight: 600; opacity: .85; }
+.pf-name { margin-top: 2px; font-size: 1.5rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.15; word-break: break-word; }
+.pf-phone { margin-top: 4px; font-size: .9rem; opacity: .92; }
+.pf-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 10px; padding: 4px 12px; border-radius: 999px;
+    background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.3);
+    font-size: .74rem; font-weight: 700;
 }
-.profile-badge {
-    padding: 6px 11px;
-    border-radius: 50px;
-    background: rgba(255,255,255,0.15);
-    border: 1px solid rgba(255,255,255,0.2);
-    font-size: 11px;
-    font-weight: 600;
+.pf-tag i { width: 7px; height: 7px; border-radius: 50%; background: #7dffa8; display: block; }
+
+/* ---------- Stats: kadi moja, safu tatu ---------- */
+.pf-stats {
+    position: relative; z-index: 2;
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    max-width: 588px; margin: -38px 16px 22px;
+    background: var(--p-card); border: 1px solid var(--p-line); border-radius: 22px;
+    box-shadow: 0 10px 28px rgba(60,30,0,.12);
 }
-.avatar-wrapper {
-    width: 70px;
-    height: 70px;
-    margin-bottom: 14px;
+@media (min-width: 652px) { .pf-stats { margin-left: auto; margin-right: auto; } }
+.pf-stat { padding: 16px 8px 14px; text-align: center; }
+.pf-stat + .pf-stat { border-left: 1px solid var(--p-line); }
+.pf-stat b { display: block; font-size: 1.6rem; line-height: 1; font-weight: 800; letter-spacing: -.02em; }
+.pf-stat span { display: block; margin-top: 7px; font-size: .74rem; font-weight: 700; color: var(--p-muted); }
+.pf-stat.wait b { color: var(--p-brand); }
+.pf-stat.ok b { color: var(--p-ok); }
+
+/* ---------- Sections ---------- */
+.pf-section { max-width: 620px; margin: 0 auto 24px; padding: 0 16px; }
+.pf-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 4px 12px; }
+.pf-head h2 { font-size: 1.08rem; font-weight: 800; letter-spacing: -.01em; }
+.pf-head span { font-size: .8rem; font-weight: 600; color: var(--p-muted); }
+
+/* ---------- Tiles ---------- */
+.pf-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pf-tile {
+    display: flex; flex-direction: column; gap: 12px;
+    min-height: 118px; padding: 14px;
+    background: var(--p-card); border: 1px solid var(--p-line); border-radius: 20px;
+    box-shadow: var(--p-shadow);
+    -webkit-tap-highlight-color: transparent;
 }
-.avatar {
-    width: 70px;
-    height: 70px;
-    display: grid;
-    place-items: center;
-    border-radius: 20px;
-    background: #ffffff;
-    color: var(--primary);
-    font-size: 24px;
-    font-weight: 800;
-    border: 3px solid rgba(255,255,255,0.4);
+.pf-tile:active { background: #faf7f3; }
+.pf-tile:last-child:nth-child(odd) { grid-column: 1 / -1; min-height: 0; flex-direction: row; align-items: center; }
+.pf-ico {
+    width: 46px; height: 46px; flex-shrink: 0;
+    display: grid; place-items: center; border-radius: 15px;
+    background: var(--p-soft); color: var(--p-brand);
 }
-.profile-name {
-    margin: 0;
-    font-size: 24px;
-    font-weight: 800;
+.pf-ico svg { width: 22px; height: 22px; }
+.pf-tile.primary { background: linear-gradient(145deg, #ff8f26, #f05a00); border-color: transparent; color: #fff; }
+.pf-tile.primary .pf-ico { background: rgba(255,255,255,.22); color: #fff; }
+.pf-tile.primary small { color: rgba(255,255,255,.88); }
+.pf-tile strong { display: block; font-size: .98rem; font-weight: 800; }
+.pf-tile small { display: block; margin-top: 2px; font-size: .78rem; line-height: 1.3; color: var(--p-muted); }
+
+/* ---------- Logout ---------- */
+.pf-logout {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    min-height: 54px; margin-top: 12px;
+    background: var(--p-card); border: 1.5px solid #f3c9c4; border-radius: 18px;
+    color: var(--p-bad); font-weight: 800; font-size: .95rem;
+    -webkit-tap-highlight-color: transparent;
 }
-.profile-phone {
-    margin: 6px 0 0;
-    font-size: 13px;
-    opacity: 0.85;
+.pf-logout:active { background: var(--p-bad-bg); }
+.pf-logout svg { width: 20px; height: 20px; }
+
+/* ---------- Orders ---------- */
+.pf-orders { display: flex; flex-direction: column; gap: 10px; }
+.pf-order {
+    position: relative; overflow: hidden;
+    padding: 14px 16px 14px 20px; background: var(--p-card);
+    border: 1px solid var(--p-line); border-radius: 18px; box-shadow: var(--p-shadow);
 }
-.profile-stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin: -18px 16px 24px;
+.pf-order::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: #d9d1c8; }
+.pf-order.st-pending::before, .pf-order.st-awaiting_payment::before { background: var(--p-brand-2); }
+.pf-order.st-processing::before, .pf-order.st-paid::before { background: #3b82d6; }
+.pf-order.st-completed::before { background: #2fa857; }
+.pf-order.st-failed::before, .pf-order.st-rejected::before { background: #e0584b; }
+.pf-order.list-item-hidden { display: none !important; }
+.pf-order-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.pf-order-amount { font-size: 1.02rem; font-weight: 800; line-height: 1.25; }
+.pf-order-price { flex-shrink: 0; font-size: 1rem; font-weight: 800; color: var(--p-brand); white-space: nowrap; }
+.pf-order-bottom { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.pf-order-meta { font-size: .78rem; color: var(--p-muted); line-height: 1.4; min-width: 0; }
+.pf-order-meta b { color: var(--p-ink); font-weight: 700; }
+.pf-status {
+    display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+    padding: 4px 11px; border-radius: 999px;
+    font-size: .74rem; font-weight: 800; line-height: 1.3;
+    background: #efebe6; color: var(--p-muted);
 }
-.stat-card {
-    padding: 16px;
-    border-radius: 18px;
-    background: #ffffff;
-    border: 1px solid var(--border);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.06);
+.pf-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pf-status.pending, .pf-status.awaiting_payment { background: var(--p-warn-bg); color: var(--p-warn); }
+.pf-status.processing, .pf-status.paid { background: var(--p-info-bg); color: var(--p-info); }
+.pf-status.completed { background: var(--p-ok-bg); color: var(--p-ok); }
+.pf-status.failed, .pf-status.rejected { background: var(--p-bad-bg); color: var(--p-bad); }
+
+.pf-empty {
+    padding: 30px 20px; text-align: center;
+    background: var(--p-card); border: 1.5px dashed var(--p-line); border-radius: 20px;
 }
-.stat-label {
-    font-size: 11px;
-    color: var(--muted);
-    margin-bottom: 5px;
+.pf-empty svg { width: 30px; height: 30px; color: var(--p-muted); opacity: .7; margin-bottom: 8px; }
+.pf-empty strong { display: block; font-size: .95rem; margin-bottom: 4px; }
+.pf-empty p { font-size: .82rem; color: var(--p-muted); line-height: 1.4; }
+.pf-empty a {
+    display: inline-flex; align-items: center; min-height: 44px; margin-top: 12px; padding: 0 20px;
+    border-radius: 999px; background: linear-gradient(135deg, var(--p-brand-2), var(--p-brand));
+    color: #fff; font-weight: 800; font-size: .88rem;
 }
-.stat-value {
-    font-size: 20px;
-    font-weight: 800;
-    color: var(--text);
+.pf-more {
+    width: 100%; min-height: 48px; margin-top: 10px; padding: 0 12px;
+    border: 1.5px dashed #f6bf92; border-radius: 14px;
+    background: var(--p-soft); color: var(--p-brand);
+    font-size: .9rem; font-weight: 800; cursor: pointer;
 }
-.profile-section {
-    padding: 0 16px;
-    margin-bottom: 24px;
-}
-.section-heading {
-    display: flex;
-    justify-content: space-between;
-    align-items: end;
-    margin-bottom: 12px;
-}
-.section-heading h2 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 800;
-}
-.section-heading span {
-    font-size: 11px;
-    color: var(--muted);
-}
-.profile-menu {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-xl);
-    overflow: hidden;
-}
-.profile-link {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 15px 16px;
-    color: inherit;
-    text-decoration: none;
-    border-bottom: 1px solid var(--border);
-}
-.profile-link:last-child {
-    border-bottom: 0;
-}
-.profile-link:active {
-    background: #fafafa;
-}
-.menu-left {
-    display: flex;
-    align-items: center;
-    gap: 13px;
-}
-.menu-icon {
-    width: 42px;
-    height: 42px;
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    border-radius: 13px;
-    background: var(--primary-soft);
-    color: var(--primary);
-}
-.menu-icon svg {
-    width: 20px;
-    height: 20px;
-    display: block;
-}
-.menu-icon.danger {
-    background: #fff0f0;
-    color: #d64545;
-}
-.menu-text strong {
-    display: block;
-    font-size: 14px;
-    font-weight: 700;
-}
-.menu-text small {
-    display: block;
-    margin-top: 2px;
-    color: var(--muted);
-    font-size: 11px;
-}
-.menu-arrow {
-    color: #bbb;
-    display: flex;
-    align-items: center;
-}
-.menu-arrow svg {
-    width: 18px;
-    height: 18px;
-}
-.orders-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-.order-card {
-    padding: 16px;
-    border-radius: 16px;
-    background: #ffffff;
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--primary);
-}
-.order-card.list-item-hidden {
-    display: none !important;
-}
-.order-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
-.order-amount {
-    font-size: 15px;
-    font-weight: 800;
-}
-.status {
-    padding: 5px 10px;
-    border-radius: 50px;
-    background: #f4f4f4;
-    color: #666;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-.status.pending { background: #fff4d6; color: #996b00; }
-.status.completed { background: #e4f8eb; color: #168044; }
-.status.failed, .status.rejected { background: #ffe7e7; color: #b42318; }
-.status.awaiting_payment, .status.processing { background: #e7f0ff; color: #2761ad; }
-.order-phone {
-    margin-top: 7px;
-    color: var(--muted);
-    font-size: 12px;
-}
-.order-price {
-    margin-top: 10px;
-    font-size: 14px;
-    font-weight: 800;
-    color: var(--primary);
-}
-.empty-orders {
-    padding: 28px 20px;
-    text-align: center;
-    border-radius: 18px;
-    background: #ffffff;
-    border: 1px solid var(--border);
-}
-.empty-orders strong {
-    display: block;
-    font-size: 14px;
-    margin-bottom: 5px;
-}
-.empty-orders p {
-    margin: 0;
-    font-size: 12px;
-    color: var(--muted);
-}
-.see-more-btn {
-    width: 100%;
-    margin-top: 4px;
-    padding: 12px;
-    border: 1.5px dashed #ffc999;
-    border-radius: 12px;
-    background: #fff8f0;
-    color: #f56b00;
-    font-size: 13px;
-    font-weight: 800;
-    cursor: pointer;
-    text-align: center;
-}
-.see-more-btn.expanded {
-    background: #f5f5f5;
-    border-color: #ddd;
-    color: #666;
-}
+.pf-more.expanded { background: #f4f1ed; border-color: var(--p-line); color: var(--p-muted); }
 </style>
 
-<div class="profile-page">
-    <header class="profile-hero">
-        <div class="profile-top">
-            <span class="profile-label">My Profile</span>
-            <div class="profile-badge">Active Account</div>
-        </div>
-        <div class="avatar-wrapper">
-            <div class="avatar">
-                {{ current_user.username[0]|upper }}
+<div class="pf">
+    <header class="pf-hero">
+        <div class="pf-hero-row">
+            <div class="pf-avatar" aria-hidden="true">{{ current_user.username[0]|upper }}</div>
+            <div class="pf-who">
+                <div class="pf-hello">Karibu tena</div>
+                <h1 class="pf-name">{{ current_user.username }}</h1>
+                <p class="pf-phone">{{ current_user.phone }}</p>
+                <span class="pf-tag"><i></i>Akaunti hai</span>
             </div>
         </div>
-        <h1 class="profile-name">{{ current_user.username }}</h1>
-        <p class="profile-phone">{{ current_user.phone }}</p>
     </header>
 
-    <div class="profile-stats">
-        <div class="stat-card">
-            <div class="stat-label">Total Orders</div>
-            <div class="stat-value">{{ orders|length }}</div>
+    <div class="pf-stats">
+        <div class="pf-stat">
+            <b>{{ orders|length }}</b>
+            <span>Oda zote</span>
         </div>
-        <div class="stat-card">
-            <div class="stat-label">Account</div>
-            <div class="stat-value">Active</div>
+        <div class="pf-stat wait">
+            <b>{{ orders|selectattr('status', 'in', waiting_states)|list|length }}</b>
+            <span>Zinasubiri</span>
+        </div>
+        <div class="pf-stat ok">
+            <b>{{ orders|selectattr('status', 'equalto', 'completed')|list|length }}</b>
+            <span>Zimekamilika</span>
         </div>
     </div>
 
-    <section class="profile-section">
-        <div class="section-heading">
-            <h2>Account</h2>
-            <span>Manage</span>
+    <section class="pf-section">
+        <div class="pf-head">
+            <h2>Huduma zako</h2>
+            <span>Njia za haraka</span>
         </div>
-        <div class="profile-menu">
-            <a href="{{ url_for('order') }}" class="profile-link">
-                <div class="menu-left">
-                    <div class="menu-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="7" width="18" height="13" rx="2"></rect>
-                            <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                            <path d="M12 12v3"></path>
-                        </svg>
-                    </div>
-                    <div class="menu-text">
-                        <strong>Request Bundle</strong>
-                        <small>Omba MB au GB</small>
-                    </div>
-                </div>
-                <div class="menu-arrow">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                </div>
+        <div class="pf-tiles">
+            <a href="{{ url_for('order') }}" class="pf-tile primary">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg></div>
+                <div><strong>Omba Bando</strong><small>Agiza MB au GB</small></div>
             </a>
-
-            <a href="{{ url_for('chat') }}" class="profile-link">
-                <div class="menu-left">
-                    <div class="menu-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                        </svg>
-                    </div>
-                    <div class="menu-text">
-                        <strong>Chat na Muuzaji</strong>
-                        <small>Wasiliana nasi moja kwa moja</small>
-                    </div>
-                </div>
-                <div class="menu-arrow">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                </div>
+            <a href="{{ url_for('chat') }}" class="pf-tile">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+                <div><strong>Chat</strong><small>Ongea na muuzaji</small></div>
             </a>
-
+            <a href="{{ url_for('my_applications') }}" class="pf-tile">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></div>
+                <div><strong>Maombi yangu</strong><small>Uwakala na nakala</small></div>
+            </a>
+            <a href="{{ url_for('wifi_history') }}" class="pf-tile">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/></svg></div>
+                <div><strong>Vocha zangu</strong><small>Historia ya WiFi</small></div>
+            </a>
             {% if current_user.is_admin %}
-            <a href="{{ url_for('dashboard') }}" class="profile-link">
-                <div class="menu-left">
-                    <div class="menu-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="3" width="7" height="9" rx="1"></rect>
-                            <rect x="14" y="3" width="7" height="5" rx="1"></rect>
-                            <rect x="14" y="12" width="7" height="9" rx="1"></rect>
-                            <rect x="3" y="16" width="7" height="5" rx="1"></rect>
-                        </svg>
-                    </div>
-                    <div class="menu-text">
-                        <strong>Dashboard</strong>
-                        <small>Simamia mfumo</small>
-                    </div>
-                </div>
-                <div class="menu-arrow">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                </div>
+            <a href="{{ url_for('dashboard') }}" class="pf-tile">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></div>
+                <div><strong>Dashboard</strong><small>Simamia mfumo</small></div>
             </a>
             {% endif %}
-
-            <a href="{{ url_for('settings') }}" class="profile-link">
-                <div class="menu-left">
-                    <div class="menu-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="3"></circle>
-                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                        </svg>
-                    </div>
-                    <div class="menu-text">
-                        <strong>Settings</strong>
-                        <small>Badilisha taarifa za akaunti</small>
-                    </div>
-                </div>
-                <div class="menu-arrow">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                </div>
-            </a>
-
-            
-            <a href="{{ url_for('download_app') }}" class="profile-link">
-                <div class="menu-left">
-                    <div class="menu-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7 10 12 15 17 10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                    </div>
-                    <div class="menu-text">
-                        <strong>Pakua App</strong>
-                        <small>SULE BUSINESS APK kwa Android</small>
-                    </div>
-                </div>
-                <div class="menu-arrow">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                </div>
-            </a>
-
-            <a href="{{ url_for('logout') }}" class="profile-link">
-                <div class="menu-left">
-                    <div class="menu-icon danger">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                            <polyline points="16 17 21 12 16 7"></polyline>
-                            <line x1="21" y1="12" x2="9" y2="12"></line>
-                        </svg>
-                    </div>
-                    <div class="menu-text">
-                        <strong>Logout</strong>
-                        <small>Toka kwenye akaunti</small>
-                    </div>
-                </div>
-                <div class="menu-arrow">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                </div>
+            <a href="{{ url_for('settings') }}" class="pf-tile">
+                <div class="pf-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+                <div><strong>Mipangilio</strong><small>Taarifa za akaunti</small></div>
             </a>
         </div>
+
+        <a href="{{ url_for('logout') }}" class="pf-logout">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Toka kwenye akaunti
+        </a>
     </section>
 
-    <section class="profile-section">
-        <div class="section-heading">
-            <h2>Orders zako</h2>
-            <span>History</span>
+    <section class="pf-section">
+        <div class="pf-head">
+            <h2>Oda zako</h2>
+            <span>Historia</span>
         </div>
-        <div class="orders-list" id="ordersList" data-limit="2">
+
+        <div class="pf-orders" id="ordersList" data-limit="2">
             {% for order in orders %}
-            <article class="order-card list-item{% if loop.index > 2 %} list-item-hidden{% endif %}">
-                <div class="order-top">
-                    <strong class="order-amount">{{ order.amount }}</strong>
-                    <span class="status {{ order.status }}">{{ order.status }}</span>
+            <article class="pf-order st-{{ order.status }} list-item{% if loop.index > 2 %} list-item-hidden{% endif %}">
+                <div class="pf-order-top">
+                    <div class="pf-order-amount">{{ order.amount }}</div>
+                    {% if order.price %}<div class="pf-order-price">TSh {{ "{:,}".format(order.price) }}</div>{% endif %}
                 </div>
-                <div class="order-phone">{{ order.phone }}</div>
-                {% if order.price %}
-                <div class="order-price">
-                    TSh {{ "{:,}".format(order.price) }}
+                <div class="pf-order-bottom">
+                    <div class="pf-order-meta">
+                        <b>{{ order.phone }}</b>
+                        {% if order.created_at %}<br>{{ order.created_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+                    </div>
+                    <span class="pf-status {{ order.status }}">{{ status_labels.get(order.status, order.status) }}</span>
                 </div>
-                {% endif %}
             </article>
             {% else %}
-            <div class="empty-orders">
-                <strong>Hakuna orders bado</strong>
-                <p>Orders zako zitaonekana hapa baada ya ku-request bundle.</p>
+            <div class="pf-empty">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>
+                <strong>Hakuna oda bado</strong>
+                <p>Oda zako zitaonekana hapa baada ya kuagiza bando.</p>
+                <a href="{{ url_for('order') }}">Agiza bando</a>
             </div>
             {% endfor %}
         </div>
+
         {% if orders and orders|length > 2 %}
-        <button type="button" class="see-more-btn" id="ordersSeeMore" onclick="toggleOrdersMore()">
-            See more ({{ orders|length - 2 }} zaidi)
+        <button type="button" class="pf-more" id="ordersSeeMore" onclick="toggleOrdersMore()">
+            Ona zaidi ({{ orders|length - 2 }})
         </button>
         {% endif %}
     </section>
@@ -469,18 +296,17 @@ function toggleOrdersMore() {
     var limit = 2;
     var expanded = btn.getAttribute('data-expanded') === '1';
     if (expanded) {
-        items.forEach(function(el, idx) {
+        items.forEach(function (el, idx) {
             if (idx >= limit) el.classList.add('list-item-hidden');
         });
         btn.setAttribute('data-expanded', '0');
         btn.classList.remove('expanded');
-        btn.textContent = 'See more (' + (items.length - limit) + ' zaidi)';
-        list.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        btn.textContent = 'Ona zaidi (' + (items.length - limit) + ')';
     } else {
-        items.forEach(function(el) { el.classList.remove('list-item-hidden'); });
+        items.forEach(function (el) { el.classList.remove('list-item-hidden'); });
         btn.setAttribute('data-expanded', '1');
         btn.classList.add('expanded');
-        btn.textContent = 'See less';
+        btn.textContent = 'Ona chache';
     }
 }
 </script>

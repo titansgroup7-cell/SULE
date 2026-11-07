@@ -241,6 +241,12 @@ class Application(db.Model):
     id_doc = db.Column(db.String(255), default="")
     shop_photo = db.Column(db.String(255), default="")
     extra_data = db.Column(db.Text, default="")
+    # Malipo ya ada ya huduma (status: awaiting_payment | payment_failed -> pending baada ya malipo)
+    payment_phone = db.Column(db.String(20), default="")
+    order_reference = db.Column(db.String(40), default="")
+    service_fee = db.Column(db.Integer, default=0)
+    fail_reason = db.Column(db.String(255), default="")
+    paid_at = db.Column(db.DateTime, nullable=True)
 
 
 class AgencyMessage(db.Model):
@@ -341,6 +347,17 @@ WIFI_PACKAGES = [
     {"key": "30d", "name": "Mwezi", "price": 15000, "duration": "mwezi 1"},
 ]
 WIFI_LOCATIONS = ("mwandoya", "mwanza")
+WIFI_LOCATION_LABELS = {
+    "mwandoya": "MWANDOYA Wi-Fi",
+    "mwanza": "DOME Wi-Fi",
+}
+
+def wifi_location_label(location):
+    key = (location or "").lower().strip()
+    return WIFI_LOCATION_LABELS.get(key, (location or "").title() or "WiFi")
+
+# Ada ya huduma ya Uwakala/Lipa — inalipwa KABLA ombi halijaonekana kwa admin
+AGENCY_SERVICE_FEE = 5000
 
 
 class WifiVoucher(db.Model):
@@ -379,6 +396,26 @@ class WifiPurchase(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship("User", backref=db.backref("wifi_purchases", lazy=True))
     voucher = db.relationship("WifiVoucher", foreign_keys=[voucher_id])
+
+
+
+class WifiInstallRequest(db.Model):
+    """Maombi ya kuagiza / kufunga WiFi nyumbani au ofisini."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    full_name = db.Column(db.String(150), nullable=False)
+    nida_number = db.Column(db.String(30), default="")
+    email = db.Column(db.String(120), default="")
+    phone = db.Column(db.String(20), nullable=False)
+    install_location = db.Column(db.String(255), default="")  # anwani / sehemu ya kufunga
+    region = db.Column(db.String(80), default="")
+    district = db.Column(db.String(80), default="")
+    ward = db.Column(db.String(80), default="")
+    village = db.Column(db.String(80), default="")
+    status = db.Column(db.String(30), default="pending", index=True)  # pending | contacted | completed | rejected
+    admin_note = db.Column(db.Text, default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user = db.relationship("User", backref=db.backref("wifi_install_requests", lazy=True))
 
 
 # ---------------------------------------------------------------------------
@@ -509,6 +546,8 @@ def inject_globals():
         "to_dar_es_salaam": to_dar_es_salaam,
         "status_label_sw": status_label_sw,
         "clean_payment_error": clean_payment_error,
+        "wifi_location_label": wifi_location_label,
+        "WIFI_LOCATION_LABELS": WIFI_LOCATION_LABELS,
     }
 
 
@@ -1536,15 +1575,50 @@ def _parse_nakala_pay_ref(order_ref):
 
 
 
+def _pick_wifi_voucher(location, package_key):
+    """Vocha available kwa eneo + kifurushi husika.
+    Fallback: vocha za zamani zisizo na kifurushi (package_key tupu)."""
+    base = WifiVoucher.query.filter_by(location=location, status="available")
+    v = (
+        base.filter(WifiVoucher.package_key == (package_key or "__none__"))
+        .order_by(WifiVoucher.id.asc())
+        .first()
+    )
+    if v:
+        return v
+    return (
+        base.filter((WifiVoucher.package_key == "") | (WifiVoucher.package_key.is_(None)))
+        .order_by(WifiVoucher.id.asc())
+        .first()
+    )
+
+
+def _wifi_stock_by_package(location):
+    """Rudisha (stock, typed, generic).
+    typed   = {package_key: idadi ya vocha zilizowekwa kwa kifurushi hicho}
+    generic = idadi ya vocha zisizo na kifurushi (zinatumika kifurushi chochote)
+    stock   = {package_key: typed + generic}  -> ndicho mteja anaweza kununua."""
+    rows = (
+        db.session.query(WifiVoucher.package_key, db.func.count(WifiVoucher.id))
+        .filter(WifiVoucher.location == location, WifiVoucher.status == "available")
+        .group_by(WifiVoucher.package_key)
+        .all()
+    )
+    typed, generic = {}, 0
+    for key, n in rows:
+        if key:
+            typed[key] = int(n)
+        else:
+            generic += int(n)
+    stock = {p["key"]: typed.get(p["key"], 0) + generic for p in WIFI_PACKAGES}
+    return stock, typed, generic
+
+
 def _assign_wifi_voucher(purchase):
     """Chagua vocha available kwa location, ipe user, iwe used."""
     if not purchase or purchase.status == "paid":
         return None
-    voucher = (
-        WifiVoucher.query.filter_by(location=purchase.location, status="available")
-        .order_by(WifiVoucher.id.asc())
-        .first()
-    )
+    voucher = _pick_wifi_voucher(purchase.location, purchase.package_key)
     if not voucher:
         return None
     voucher.status = "used"
@@ -1560,6 +1634,21 @@ def _assign_wifi_voucher(purchase):
     purchase.voucher_id = voucher.id
     db.session.commit()
     return voucher
+
+
+def _parse_agency_pay_ref(order_ref):
+    """AGY{id}T{timestamp} -> Application au None."""
+    ref = (order_ref or "").strip()
+    if not ref.upper().startswith("AGY"):
+        return None
+    try:
+        part = ref[3:].split("T")[0].split("t")[0].split("-")[0]
+        aid = int("".join(ch for ch in part if ch.isdigit()) or "0")
+        if aid:
+            return Application.query.get(aid)
+    except Exception:
+        return None
+    return None
 
 
 def _mark_payment_success(merchant_ref, extra=""):
@@ -1610,6 +1699,41 @@ def _mark_payment_success(merchant_ref, extra=""):
                     print(f"wifi pay push: {e}")
             return True, "wifi"
         return False, "wifi not found"
+
+    # Agency — ada ya huduma imelipwa => ombi (na documents) sasa linaonekana kwa admin
+    agency_app = _parse_agency_pay_ref(merchant_ref)
+    if agency_app:
+        if agency_app.status in ("awaiting_payment", "payment_failed"):
+            agency_app.status = "pending"
+            agency_app.fail_reason = ""
+            agency_app.paid_at = datetime.utcnow()
+            db.session.add(AgencyMessage(
+                application_id=agency_app.id,
+                sender="system",
+                message=(
+                    f"Malipo ya ada ya huduma (TSh {int(agency_app.service_fee or 0):,}) yamepokelewa. "
+                    f"Ombi {agency_app.application_code} limetumwa kwa admin. "
+                    "Timu yetu itakujibu hivi karibuni."
+                ),
+            ))
+            db.session.commit()
+            try:
+                send_push_to_admins(
+                    "Ombi jipya la Uwakala (limelipiwa) ✓",
+                    f"{agency_app.application_code} — {agency_app.service_type} — {agency_app.full_name}",
+                    url="/dashboard",
+                    tag=f"agency-new-{agency_app.id}",
+                )
+                send_push_to_user(
+                    agency_app.user_id,
+                    "Malipo yamepokelewa ✓",
+                    f"Ombi {agency_app.application_code} limetumwa kwa admin.",
+                    url="/my-applications",
+                    tag=f"agency-pay-{agency_app.id}",
+                )
+            except Exception as e:
+                print(f"agency pay push: {e}")
+        return True, "agency"
 
     nakala_req = _parse_nakala_pay_ref(merchant_ref)
     if nakala_req:
@@ -1691,6 +1815,24 @@ def _mark_payment_failed(merchant_ref, reason="Malipo yameshindwa."):
                     print(f"wifi fail push: {e}")
             return True, "wifi"
         return False, "wifi not found"
+
+    agency_app = _parse_agency_pay_ref(merchant_ref)
+    if agency_app:
+        if agency_app.status == "awaiting_payment":
+            agency_app.status = "payment_failed"
+            agency_app.fail_reason = reason
+            db.session.commit()
+            try:
+                send_push_to_user(
+                    agency_app.user_id,
+                    "Malipo ya ada yameshindwa",
+                    f"Ombi {agency_app.application_code}: {reason}. Jaribu kulipa tena.",
+                    url="/agency",
+                    tag=f"agency-fail-{agency_app.id}",
+                )
+            except Exception as e:
+                print(f"agency fail push: {e}")
+        return True, "agency"
 
     nakala_req = _parse_nakala_pay_ref(merchant_ref)
     if nakala_req:
@@ -2188,6 +2330,7 @@ def agency_service(network, service_type):
         service_label=config.get("service_label", service_type),
         form_title=config.get("form_title", "Jaza Taarifa"),
         fields=config["fields"],
+        service_fee=AGENCY_SERVICE_FEE,
     )
 
 
@@ -2226,15 +2369,20 @@ def agency_review():
     )
 
 
-@app.route("/agency/submit", methods=["POST"])
-@login_required
-def agency_submit():
-    user = get_current_user()
-    draft = session.get("agency_draft")
-    if not draft:
-        flash("Hakuna taarifa. Anza upya.", "error")
-        return redirect(url_for("agency"))
+def _agency_review_items(draft):
+    items = []
+    for f in draft.get("fields", []):
+        name = f["name"]
+        if f["type"] == "file":
+            path = draft.get("files", {}).get(name, "")
+            items.append({"label": f["label"], "value": os.path.basename(path) if path else "—", "is_file": True})
+        else:
+            items.append({"label": f["label"], "value": draft.get("data", {}).get(name, ""), "is_file": False})
+    return items
 
+
+def _agency_create_application(user, draft):
+    """Tengeneza Application kwa status awaiting_payment — HAIONEKANI kwa admin hadi malipo yathibitishwe."""
     data = draft.get("data", {})
     files = draft.get("files", {})
     network = draft["network"]
@@ -2264,32 +2412,96 @@ def agency_submit():
         id_doc=files.get("id_doc", ""),
         shop_photo=files.get("shop_photo", ""),
         description=data.get("description", ""),
-        status="pending",
+        status="awaiting_payment",
+        service_fee=AGENCY_SERVICE_FEE,
     )
     db.session.add(app_obj)
     db.session.flush()
+    return app_obj
 
-    sys_msg = AgencyMessage(
-        application_id=app_obj.id,
-        sender="system",
-        message=f"Ombi {code} limepokelewa ({network} – {service_label}). Status: Inasubiri. Timu yetu itakujibu hivi karibuni.",
+
+@app.route("/agency/submit", methods=["POST"])
+@login_required
+def agency_submit():
+    """Kutoka kwenye review -> lipa ada kwanza (hakuna ombi linaloenda kwa admin bila malipo)."""
+    if not session.get("agency_draft"):
+        flash("Hakuna taarifa. Anza upya.", "error")
+        return redirect(url_for("agency"))
+    return redirect(url_for("agency_pay"))
+
+
+@app.route("/agency/pay", methods=["GET", "POST"])
+@login_required
+def agency_pay():
+    user = get_current_user()
+    draft = session.get("agency_draft")
+    if not draft:
+        flash("Hakuna taarifa. Anza upya.", "error")
+        return redirect(url_for("agency"))
+
+    # Ombi lilishalipiwa tayari? (draft ya zamani)
+    existing_id = draft.get("application_id")
+    existing = Application.query.get(existing_id) if existing_id else None
+    if existing and (existing.user_id != user.id or existing.status not in ("awaiting_payment", "payment_failed")):
+        session.pop("agency_draft", None)
+        flash("Ombi hilo limeshatumwa. Fuatilia kwenye Maombi Yangu.", "success")
+        return redirect(url_for("my_applications"))
+
+    if request.method == "POST":
+        payment_phone = normalize_phone((request.form.get("payment_phone") or "").strip())
+        if not payment_phone:
+            flash("Weka namba ya malipo.", "error")
+            return redirect(url_for("agency_pay"))
+
+        app_obj = existing or _agency_create_application(user, draft)
+        app_obj.payment_phone = payment_phone
+        app_obj.service_fee = AGENCY_SERVICE_FEE
+        app_obj.status = "awaiting_payment"
+        app_obj.fail_reason = ""
+        # Kila jaribio lina ref mpya; webhook inatambua ombi kupitia AGY{id}
+        order_ref = f"AGY{app_obj.id}T{int(time.time())}"
+        app_obj.order_reference = order_ref
+        db.session.commit()
+
+        draft["application_id"] = app_obj.id
+        keep_session_alive()
+        session["agency_draft"] = draft
+
+        if not (clickpesa_enabled() and AGENCY_SERVICE_FEE > 0):
+            app_obj.status = "payment_failed"
+            app_obj.fail_reason = "Payment disabled"
+            db.session.commit()
+            flash("Mfumo wa malipo haupo kwa sasa. Wasiliana na admin.", "error")
+            return redirect(url_for("agency_pay"))
+
+        try:
+            ok, data = initiate_clickpesa_ussd(AGENCY_SERVICE_FEE, order_ref, payment_phone)
+            if ok:
+                flash(
+                    f"Ombi la malipo ya TSh {AGENCY_SERVICE_FEE:,} limetumwa kwa {payment_phone}. "
+                    "Thibitisha kwenye simu yako. Ombi lako litatumwa kwa admin baada ya malipo kuthibitishwa.",
+                    "success",
+                )
+                return redirect(url_for("my_applications"))
+            reason = clean_payment_error(data, "Malipo yameshindwa kuanzishwa.")
+        except Exception as e:
+            reason = clean_payment_error(str(e))
+        app_obj.status = "payment_failed"
+        app_obj.fail_reason = reason
+        db.session.commit()
+        flash(reason, "error")
+        return redirect(url_for("agency_pay"))
+
+    return render_template(
+        "agency_pay.html",
+        network=draft["network"],
+        service_type=draft["service_type"],
+        service_label=draft.get("service_label", ""),
+        review_items=_agency_review_items(draft),
+        service_fee=AGENCY_SERVICE_FEE,
+        default_phone=user.phone,
+        last_fail=(existing.fail_reason if existing and existing.status == "payment_failed" else ""),
     )
-    db.session.add(sys_msg)
-    db.session.commit()
-
-    try:
-        send_push_to_admins(
-            "Ombi jipya la Uwakala",
-            f"{code} — {network} / {service_label} — {full_name}",
-            url="/dashboard",
-            tag=f"agency-new-{app_obj.id}",
-        )
-    except Exception as e:
-        print(f"agency new push: {e}")
-
-    session.pop("agency_draft", None)
-    flash(f"Ombi limetumwa! Code: {code}. Unaweza kufuatilia kwenye Maombi Yangu.", "success")
-    return redirect(url_for("my_applications"))
 
 
 @app.route("/my-applications")
@@ -3442,7 +3654,12 @@ def dashboard():
     trash_nakala_count = NakalaRequest.query.filter_by(status="payment_failed").count()
     trash_count = trash_orders_count + trash_nakala_count
 
-    applications = Application.query.order_by(Application.created_at.desc()).limit(50).all()
+    applications = (
+        Application.query.filter(Application.status.notin_(("awaiting_payment", "payment_failed")))
+        .order_by(Application.created_at.desc())
+        .limit(50)
+        .all()
+    )
     slides = Slide.query.order_by(Slide.sort_order.asc(), Slide.id.asc()).all()
     nakala_list = (
         NakalaRequest.query.filter(NakalaRequest.status != "payment_failed")
@@ -4162,6 +4379,11 @@ def ensure_agency_columns():
                 "id_doc": "VARCHAR(255) DEFAULT ''",
                 "shop_photo": "VARCHAR(255) DEFAULT ''",
                 "extra_data": "TEXT DEFAULT ''",
+                "payment_phone": "VARCHAR(20) DEFAULT ''",
+                "order_reference": "VARCHAR(40) DEFAULT ''",
+                "service_fee": "INTEGER DEFAULT 0",
+                "fail_reason": "VARCHAR(255) DEFAULT ''",
+                "paid_at": "TIMESTAMP",
             }
             with db.engine.begin() as conn:
                 for name, typedef in cols.items():
@@ -4275,6 +4497,95 @@ def wifi_home():
     return render_template("wifi.html", show_panel=show_panel, packages=WIFI_PACKAGES)
 
 
+@app.route("/wifi/agiza", methods=["GET", "POST"])
+@login_required
+def wifi_install():
+    """Fomu ya kuagiza WiFi — inatumwa kwa admin."""
+    user = get_current_user()
+    if request.method == "POST":
+        full_name = (request.form.get("full_name") or "").strip()
+        nida_number = (request.form.get("nida_number") or "").strip()
+        email = (request.form.get("email") or "").strip()
+        phone = (request.form.get("phone") or "").strip()
+        install_location = (request.form.get("install_location") or "").strip()
+        region = (request.form.get("region") or "").strip()
+        district = (request.form.get("district") or "").strip()
+        ward = (request.form.get("ward") or "").strip()
+        village = (request.form.get("village") or "").strip()
+
+        if not full_name or not phone:
+            flash("Jaza majina matatu na namba ya mawasiliano.", "error")
+            return redirect(url_for("wifi_install"))
+        if not nida_number:
+            flash("Weka namba ya NIDA.", "error")
+            return redirect(url_for("wifi_install"))
+        if not email or "@" not in email:
+            flash("Weka Gmail / barua pepe sahihi.", "error")
+            return redirect(url_for("wifi_install"))
+        if not install_location:
+            flash("Eleza location ya WiFi kufika.", "error")
+            return redirect(url_for("wifi_install"))
+        if not region or not district or not ward or not village:
+            flash("Jaza mkoa, wilaya, kata na kijiji.", "error")
+            return redirect(url_for("wifi_install"))
+
+        phone_n = normalize_phone(phone) if phone else phone
+        req = WifiInstallRequest(
+            user_id=user.id if user else None,
+            full_name=full_name,
+            nida_number=nida_number,
+            email=email,
+            phone=phone_n or phone,
+            install_location=install_location,
+            region=region,
+            district=district,
+            ward=ward,
+            village=village,
+            status="pending",
+        )
+        db.session.add(req)
+        db.session.commit()
+        try:
+            send_push_to_admins(
+                "Ombi jipya la kuagiza WiFi",
+                f"{full_name} · {phone_n or phone} · {region}/{district}",
+                url=url_for("admin_wifi_install"),
+                tag=f"wifi-install-{req.id}",
+            )
+        except Exception as e:
+            print(f"wifi install push: {e}")
+        flash("Ombi lako la kuagiza WiFi limetumwa kwa admin. Tutawasiliana nawe hivi karibuni.", "success")
+        return redirect(url_for("wifi_install"))
+
+    return render_template("wifi_install.html")
+
+
+@app.route("/admin/wifi-install", methods=["GET", "POST"])
+@login_required
+def admin_wifi_install():
+    user = get_current_user()
+    if not user or not user.is_admin:
+        flash("Huna ruhusa.", "error")
+        return redirect(url_for("home"))
+
+    if request.method == "POST":
+        req_id = request.form.get("req_id")
+        action = (request.form.get("action") or "").strip()
+        note = (request.form.get("admin_note") or "").strip()
+        req = WifiInstallRequest.query.get(req_id)
+        if req and action in ("contacted", "completed", "rejected", "pending"):
+            req.status = action
+            if note:
+                req.admin_note = note
+            db.session.commit()
+            flash("Ombi limesasishwa.", "success")
+        return redirect(url_for("admin_wifi_install"))
+
+    items = WifiInstallRequest.query.order_by(WifiInstallRequest.created_at.desc()).limit(200).all()
+    pending = WifiInstallRequest.query.filter_by(status="pending").count()
+    return render_template("admin_wifi_install.html", items=items, pending=pending)
+
+
 @app.route("/wifi/<location>")
 def wifi_location(location):
     location = (location or "").lower().strip()
@@ -4283,11 +4594,14 @@ def wifi_location(location):
         return redirect(url_for("wifi_home"))
     user = get_current_user()
     available = WifiVoucher.query.filter_by(location=location, status="available").count()
+    stock, _typed, _generic = _wifi_stock_by_package(location)
     return render_template(
         "wifi_packages.html",
         location=location,
+        location_label=wifi_location_label(location),
         packages=WIFI_PACKAGES,
         available=available,
+        stock=stock,
         current_user=user,
     )
 
@@ -4313,9 +4627,9 @@ def wifi_buy():
         flash("Kifurushi hakipo.", "error")
         return redirect(url_for("wifi_location", location=location))
 
-    available = WifiVoucher.query.filter_by(location=location, status="available").count()
-    if available < 1:
-        flash("Samahani, vocha za eneo hili zimeisha. Jaribu baadaye.", "error")
+    stock, _typed, _generic = _wifi_stock_by_package(location)
+    if stock.get(pkg["key"], 0) < 1:
+        flash(f"Samahani, vocha za {pkg['name']} ({wifi_location_label(location)}) zimeisha. Jaribu kifurushi kingine au baadaye.", "error")
         return redirect(url_for("wifi_location", location=location))
 
     payment_phone = normalize_phone(payment_phone) if payment_phone else ""
@@ -4388,7 +4702,8 @@ def wifi_history():
 @_wifi_staff_required
 def wifi_panel():
     user = get_current_user()
-    return render_template("wifi_panel.html", packages=WIFI_PACKAGES, locations=WIFI_LOCATIONS)
+    stock = {loc: _wifi_stock_by_package(loc)[0] for loc in WIFI_LOCATIONS}
+    return render_template("wifi_panel.html", packages=WIFI_PACKAGES, locations=WIFI_LOCATIONS, stock=stock)
 
 
 @app.route("/wifi/panel/generate", methods=["POST"])
@@ -4407,13 +4722,9 @@ def wifi_panel_generate():
         flash("Kifurushi hakipo.", "error")
         return redirect(url_for("wifi_panel"))
 
-    voucher = (
-        WifiVoucher.query.filter_by(location=location, status="available")
-        .order_by(WifiVoucher.id.asc())
-        .first()
-    )
+    voucher = _pick_wifi_voucher(location, pkg["key"])
     if not voucher:
-        flash(f"Hakuna vocha available kwa {location.title()}. Admin ajaze stock.", "error")
+        flash(f"Hakuna vocha ya {pkg['name']} kwa {location.title()}. Admin ajaze stock.", "error")
         return redirect(url_for("wifi_panel"))
 
     voucher.status = "used"
@@ -4438,29 +4749,61 @@ def admin_wifi():
 
         if action == "upload":
             location = (request.form.get("location") or "").lower().strip()
-            raw = (request.form.get("codes") or "").strip()
             if location not in WIFI_LOCATIONS:
                 flash("Eneo si sahihi.", "error")
-                return redirect(url_for("admin_wifi"))
-            # Split by comma, newline, semicolon, space
-            parts = []
-            for chunk in raw.replace(";", ",").replace("\n", ",").replace("\r", ",").split(","):
-                code = chunk.strip()
-                if code:
-                    parts.append(code)
-            added = 0
-            skipped = 0
-            for code in parts:
-                exists = WifiVoucher.query.filter_by(code=code).first()
-                if exists:
-                    skipped += 1
+                return redirect(url_for("admin_wifi") + "#vocha")
+
+            def _split_codes(raw):
+                out = []
+                for chunk in (raw or "").replace(";", ",").replace("\n", ",").replace("\r", ",").split(","):
+                    c = chunk.strip()
+                    if c:
+                        out.append(c)
+                return out
+
+            seen = set()
+            summary = []
+            total_added = 0
+            total_skipped = 0
+            # Kila kifurushi kina sanduku lake: codes_<key>
+            for pkg in WIFI_PACKAGES:
+                added = 0
+                for code in _split_codes(request.form.get(f"codes_{pkg['key']}")):
+                    if code in seen or WifiVoucher.query.filter_by(code=code).first():
+                        total_skipped += 1
+                        continue
+                    seen.add(code)
+                    db.session.add(WifiVoucher(
+                        location=location,
+                        code=code,
+                        status="available",
+                        package_key=pkg["key"],
+                        package_name=pkg["name"],
+                        price=pkg["price"],
+                    ))
+                    added += 1
+                if added:
+                    summary.append(f"{pkg['name']}: {added}")
+                    total_added += added
+            # Njia ya zamani (vocha bila kifurushi) — bado inafanya kazi
+            for code in _split_codes(request.form.get("codes")):
+                if code in seen or WifiVoucher.query.filter_by(code=code).first():
+                    total_skipped += 1
                     continue
-                v = WifiVoucher(location=location, code=code, status="available")
-                db.session.add(v)
-                added += 1
+                seen.add(code)
+                db.session.add(WifiVoucher(location=location, code=code, status="available"))
+                total_added += 1
+                summary.append("Bila kifurushi: 1")
             db.session.commit()
-            flash(f"Vocha {added} zimeongezwa ({location.title()}). Zilizorudiwa: {skipped}.", "success")
-            return redirect(url_for("admin_wifi"))
+            if total_added == 0 and total_skipped == 0:
+                flash("Hakuna vocha zilizowekwa. Andika vocha kwenye angalau kifurushi kimoja.", "error")
+            else:
+                detail = " · ".join(summary) if summary else "—"
+                flash(
+                    f"Vocha {total_added} zimeongezwa ({location.title()}) — {detail}. Zilizorudiwa: {total_skipped}.",
+                    "success" if total_added else "error",
+                )
+            return redirect(url_for("admin_wifi") + "#vocha")
 
         if action == "trash_used":
             # Move used to trash (optional cleanup view)
@@ -4494,6 +4837,13 @@ def admin_wifi():
             "available": WifiVoucher.query.filter_by(location=loc, status="available").count(),
             "used": WifiVoucher.query.filter_by(location=loc, status="used").count(),
             "trash": WifiVoucher.query.filter_by(location=loc, status="trash").count(),
+        }
+    stock_matrix = {}
+    for loc in WIFI_LOCATIONS:
+        _stock, _typed, _generic = _wifi_stock_by_package(loc)
+        stock_matrix[loc] = {
+            "by_package": {p["key"]: _typed.get(p["key"], 0) for p in WIFI_PACKAGES},
+            "generic": _generic,
         }
     recent_used = (
         WifiVoucher.query.filter_by(status="used")
@@ -4625,6 +4975,8 @@ def admin_wifi():
         staff_users=staff_users,
         search_users=search_users,
         locations=WIFI_LOCATIONS,
+        packages=WIFI_PACKAGES,
+        stock_matrix=stock_matrix,
         q=all_users_q,
         # Report
         period=period,

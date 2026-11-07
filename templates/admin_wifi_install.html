@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Admin — Maombi ya Agiza WiFi{% endblock %}
+{% block content %}
+<style>
+.awi { max-width: 720px; margin: 0 auto; padding: 14px 14px 100px; }
+.awi h1 { font-size: 1.25rem; margin: 0 0 4px; }
+.awi .sub { color: #666; font-size: .85rem; margin-bottom: 14px; }
+.awi-card {
+    background: #fff; border: 1px solid #eee; border-radius: 14px;
+    padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.04);
+}
+.awi-card .name { font-weight: 800; font-size: 1rem; }
+.awi-card .meta { font-size: .82rem; color: #555; margin-top: 4px; line-height: 1.45; }
+.awi-card .badge {
+    display: inline-block; font-size: .72rem; font-weight: 700;
+    padding: 3px 8px; border-radius: 999px; margin-top: 8px;
+}
+.badge-pending { background: #fff7ed; color: #c2410c; }
+.badge-contacted { background: #eff6ff; color: #1d4ed8; }
+.badge-completed { background: #ecfdf5; color: #047857; }
+.badge-rejected { background: #fef2f2; color: #b91c1c; }
+.awi-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.awi-actions button, .awi-actions select {
+    border: 1px solid #ddd; background: #fafafa; border-radius: 10px;
+    padding: 8px 10px; font-size: .8rem; font-weight: 700; cursor: pointer;
+}
+.awi-actions input[type=text] {
+    flex: 1; min-width: 140px; border: 1px solid #ddd; border-radius: 10px; padding: 8px 10px;
+}
+.awi-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+.awi-top a { color: #0f766e; font-weight: 700; font-size: .85rem; }
+</style>
+
+<div class="awi">
+    <div class="awi-top">
+        <div>
+            <h1>Maombi ya Agiza WiFi</h1>
+            <div class="sub">Pending: <strong>{{ pending }}</strong></div>
+        </div>
+        <a href="{{ url_for('admin_wifi') }}">← WiFi Admin</a>
+    </div>
+
+    {% if not items %}
+    <div class="awi-card">Hakuna maombi bado.</div>
+    {% endif %}
+
+    {% for r in items %}
+    <div class="awi-card">
+        <div class="name">{{ r.full_name }}</div>
+        <div class="meta">
+            <div>NIDA: {{ r.nida_number or '—' }}</div>
+            <div>Gmail: {{ r.email or '—' }}</div>
+            <div>Simu: {{ r.phone }}</div>
+            <div>Location: {{ r.install_location or '—' }}</div>
+            <div>{{ r.region }} / {{ r.district }} / {{ r.ward }} / {{ r.village }}</div>
+            <div>{{ to_dar_es_salaam(r.created_at) }}</div>
+            {% if r.admin_note %}<div>Note: {{ r.admin_note }}</div>{% endif %}
+        </div>
+        <span class="badge badge-{{ r.status }}">{{ r.status }}</span>
+        <form method="POST" class="awi-actions">
+            <input type="hidden" name="req_id" value="{{ r.id }}">
+            <select name="action">
+                <option value="pending" {% if r.status=='pending' %}selected{% endif %}>pending</option>
+                <option value="contacted" {% if r.status=='contacted' %}selected{% endif %}>contacted</option>
+                <option value="completed" {% if r.status=='completed' %}selected{% endif %}>completed</option>
+                <option value="rejected" {% if r.status=='rejected' %}selected{% endif %}>rejected</option>
+            </select>
+            <input type="text" name="admin_note" placeholder="Note (hiari)" value="{{ r.admin_note or '' }}">
+            <button type="submit">Hifadhi</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
