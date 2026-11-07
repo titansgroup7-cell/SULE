@@ -4281,15 +4281,22 @@ def favicon():
         mimetype='image/png'
     )
 
-
 @app.route("/.well-known/assetlinks.json")
 def digital_asset_links():
-    return send_from_directory(
-        os.path.join(app.root_path, "static", ".well-known"),
-        "assetlinks.json",
-        mimetype="application/json",
-    )
-
+    response = jsonify([
+        {
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": "com.dutoza.sulebusiness",
+                "sha256_cert_fingerprints": [
+                    "93:8D:4D:1E:E0:BB:6F:C5:91:05:46:0F:81:95:5C:61:23:FC:6E:A8:23:56:A7:0C:11:69:87:7F:2C:05:83:CB"
+                ]
+            }
+        }
+    ])
+    response.headers["Content-Type"] = "application/json"
+    return response
 
 
 
