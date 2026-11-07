@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Lipa ada · {{ network }}{% endblock %}
+{% block content %}
+<style>
+    .ap-card { padding: 16px; margin-bottom: 14px; }
+    .ap-h { font-size: 14px; font-weight: 800; margin: 0 0 10px; }
+    .ap-row {
+        display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+        padding: 9px 0; border-bottom: 1px solid #f0ebe4; font-size: 13px;
+    }
+    .ap-row:last-child { border-bottom: 0; padding-bottom: 0; }
+    .ap-row .l { color: #888; font-weight: 600; flex-shrink: 0; max-width: 42%; }
+    .ap-row .v { text-align: right; font-weight: 700; color: #222; word-break: break-word; }
+    .ap-row .v.file { color: #1f7a3d; }
+    .ap-fee {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 16px; margin-bottom: 14px; border-radius: 18px;
+        background: linear-gradient(135deg, #ff8a1f, #e9560a); color: #fff;
+        box-shadow: 0 10px 22px rgba(233,86,10,.25);
+    }
+    .ap-fee .t { font-size: 13px; font-weight: 700; opacity: .92; }
+    .ap-fee .amt { font-size: 26px; font-weight: 800; letter-spacing: -.02em; white-space: nowrap; }
+    .ap-label { display: block; font-size: 13px; font-weight: 700; color: #333; margin-bottom: 6px; }
+    .ap-input {
+        width: 100%; box-sizing: border-box; min-height: 50px; padding: 0 14px;
+        border: 1.5px solid #e0e0e0; border-radius: 12px; font-size: 16px; background: #fff; outline: none;
+    }
+    .ap-input:focus { border-color: #f56b00; box-shadow: 0 0 0 3px rgba(245,107,0,.15); }
+    .ap-hint { font-size: 12px; color: #888; margin: 6px 0 14px; line-height: 1.4; }
+    .ap-steps { margin: 0 0 14px; padding-left: 18px; font-size: 12.5px; color: #555; line-height: 1.55; }
+    .ap-submit {
+        width: 100%; min-height: 52px; border: 0; border-radius: 14px;
+        background: linear-gradient(135deg, #ff8a1f, #e9560a); color: #fff;
+        font-size: 15px; font-weight: 800; cursor: pointer;
+        box-shadow: 0 8px 18px rgba(233,86,10,.25);
+    }
+    .ap-submit:disabled { opacity: .6; cursor: not-allowed; }
+    .ap-fail { padding: 12px 14px; margin-bottom: 14px; border-radius: 14px; background: #fde8e6; color: #b42318; font-size: 13px; line-height: 1.4; }
+    .ap-back { display: block; text-align: center; margin-top: 12px; font-size: 13px; font-weight: 700; color: #f56b00; text-decoration: none; }
+</style>
+
+<header class="topbar">
+    <div>
+        <div class="brand">{{ network }}</div>
+        <div class="muted">{{ service_label }}</div>
+    </div>
+    <a href="{{ url_for('agency_review') }}" class="icon-btn" aria-label="Rudi kwenye taarifa">←</a>
+</header>
+
+<div class="page">
+    <div style="margin-bottom:14px;">
+        <h2 style="font-size:17px; font-weight:800;">Lipa ada ya huduma</h2>
+        <p class="muted" style="font-size:13px; margin-top:4px;">Ombi lako litatumwa kwa admin baada ya malipo kuthibitishwa.</p>
+    </div>
+
+    {% if last_fail %}
+    <div class="ap-fail"><strong>Malipo ya awali yameshindwa:</strong> {{ last_fail }}. Jaribu tena hapa chini.</div>
+    {% endif %}
+
+    <div class="ap-fee">
+        <div class="t">Ada ya huduma</div>
+        <div class="amt">TSh {{ "{:,}".format(service_fee) }}</div>
+    </div>
+
+    <section class="card ap-card">
+        <h3 class="ap-h">Taarifa zako</h3>
+        {% for item in review_items %}
+        <div class="ap-row">
+            <span class="l">{{ item.label }}</span>
+            <span class="v{% if item.is_file %} file{% endif %}">{{ item.value or '—' }}{% if item.is_file and item.value != '—' %} ✓{% endif %}</span>
+        </div>
+        {% endfor %}
+    </section>
+
+    <form method="POST" action="{{ url_for('agency_pay') }}" class="card ap-card" id="apForm">
+        <h3 class="ap-h">Malipo</h3>
+        <label class="ap-label" for="ap-phone">Namba ya kulipia (yenye hela)</label>
+        <input class="ap-input" id="ap-phone" type="tel" name="payment_phone" inputmode="tel" autocomplete="tel"
+               value="{{ default_phone or '' }}" placeholder="07XXXXXXXX au 06XXXXXXXX" required>
+        <p class="ap-hint">Unaweza kutumia namba ya mtandao wowote.</p>
+
+        <ol class="ap-steps">
+            <li>Bonyeza <strong>Lipa</strong>, ujumbe wa malipo utafika kwenye simu yako.</li>
+            <li>Weka PIN yako kuthibitisha.</li>
+            <li>Malipo yakithibitishwa, ombi na documents zako zinaenda kwa admin.</li>
+        </ol>
+
+        <button type="submit" class="ap-submit" id="apBtn">Lipa TSh {{ "{:,}".format(service_fee) }} na Tuma Ombi</button>
+        <a href="{{ url_for('agency_review') }}" class="ap-back">Rudi kuhakiki taarifa</a>
+    </form>
+</div>
+
+<script>
+document.getElementById('apForm').addEventListener('submit', function () {
+    var b = document.getElementById('apBtn');
+    b.disabled = true;
+    b.textContent = 'Inatuma ombi la malipo...';
+});
+</script>
+{% endblock %}
