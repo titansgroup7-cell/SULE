@@ -955,5 +955,21 @@
 })();
 </script>
 
+{% if has_pending_payment %}
+<script>
+(function () {
+    // Malipo yanasubiri uthibitisho: angalia kila sekunde 4, onyesha upya ukurasa yakikamilika.
+    var tries = 0;
+    var t = setInterval(function () {
+        if (++tries > 225) { clearInterval(t); return; }
+        fetch('/payment/pending', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { if (!d.pending) { clearInterval(t); location.reload(); } })
+            .catch(function () {});
+    }, 4000);
+})();
+</script>
+{% endif %}
+
 </body>
 </html>

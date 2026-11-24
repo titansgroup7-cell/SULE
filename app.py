@@ -2,6 +2,8 @@ import os
 import csv
 import io
 import json
+import hmac
+import hashlib
 import secrets
 import time
 import requests
@@ -87,14 +89,14 @@ def handle_file_too_large(e):
 
 db = SQLAlchemy(app)
 
-# Manual payment (fallback)
-PAYMENT_NUMBER = os.environ.get("PAYMENT_NUMBER", "37912416")
-PAYMENT_NAME = os.environ.get("PAYMENT_NAME", "Matondo Maduhu")
-PAYMENT_NETWORK = os.environ.get("PAYMENT_NETWORK", "Vodacom")
-
-# ClickPesa (USSD push — Voda, Tigo, Airtel, Halotel n.k.)
-CLICKPESA_CLIENT_ID = (os.environ.get("CLICKPESA_CLIENT_ID") or "").strip()
-CLICKPESA_API_KEY = (os.environ.get("CLICKPESA_API_KEY") or "").strip()
+# Dalipay (njia pekee ya malipo) — weka keys kwenye Environment Variables
+# Base URL imewekwa moja kwa moja (haihitaji env)
+DALIPAY_PUBLIC_KEY = os.environ.get("DALIPAY_PUBLIC_KEY", "").strip()
+DALIPAY_SECRET_KEY = os.environ.get("DALIPAY_SECRET_KEY", "").strip()
+DALIPAY_CALLBACK_SECRET = os.environ.get("DALIPAY_CALLBACK_SECRET", "").strip()
+DALIPAY_BASE_URL = "https://app.dalipay.co.tz"
+DALIPAY_COLLECT_PATH = "/api/v1/collections"
+PAYMENT_EXPIRE_SEC = 900  # dakika 15 bila jibu lolote la Dalipay → inahesabiwa imeshindwa
 
 # Supabase Storage (faili zote: picha, PDF, slides)
 # Project Settings → API → Project URL + service_role key (secret)
@@ -183,6 +185,22 @@ class Order(db.Model):
     order_reference = db.Column(db.String(30), unique=True, nullable=True)
     fail_reason = db.Column(db.String(255), default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class PaymentAttempt(db.Model):
+    """Jaribio moja la Dalipay. external_id (max 30) → merchant_ref (ORD/NKR/AGY/WIFI/WINST...)."""
+    id = db.Column(db.Integer, primary_key=True)
+    external_id = db.Column(db.String(30), unique=True, nullable=False)
+    merchant_ref = db.Column(db.String(80), nullable=False, index=True)
+    uuid = db.Column(db.String(80), default="")
+    reference = db.Column(db.String(80), default="")
+    user_id = db.Column(db.Integer, nullable=True, index=True)
+    amount = db.Column(db.Integer, default=0)
+    phone = db.Column(db.String(20), default="")
+    status = db.Column(db.String(20), default="processing")  # processing | success | failed
+    fail_reason = db.Column(db.String(255), default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    checked_at = db.Column(db.DateTime, nullable=True)
 
 
 class Message(db.Model):
@@ -537,7 +555,7 @@ def message_to_dict(msg):
 
 
 def status_label_sw(status):
-    """Jina la status kwa Kiswahili (ClickPesa + workflow)."""
+    """Jina la status kwa Kiswahili."""
     if not status:
         return "—"
     mapping = {
@@ -559,9 +577,7 @@ def status_label_sw(status):
 def inject_globals():
     return {
         "current_user": get_current_user(),
-        "PAYMENT_NUMBER": PAYMENT_NUMBER,
-        "PAYMENT_NAME": PAYMENT_NAME,
-        "PAYMENT_NETWORK": PAYMENT_NETWORK,
+        "has_pending_payment": _has_pending_payment(),
         "to_dar_es_salaam": to_dar_es_salaam,
         "status_label_sw": status_label_sw,
         "clean_payment_error": clean_payment_error,
@@ -747,41 +763,76 @@ def save_agency_file(file_storage, prefix="doc"):
     return storage_upload(file_storage, f"agency/{filename}")
 
 
-def clickpesa_enabled():
-    return bool(CLICKPESA_CLIENT_ID and CLICKPESA_API_KEY)
+def dalipay_enabled():
+    return bool(DALIPAY_PUBLIC_KEY and DALIPAY_SECRET_KEY)
 
 
-def get_clickpesa_token():
-    url = "https://api.clickpesa.com/third-parties/generate-token"
-    headers = {
-        "client-id": CLICKPESA_CLIENT_ID,
-        "api-key": CLICKPESA_API_KEY,
+def _dalipay_headers(json_body=False):
+    h = {
+        "X-Public-Key": DALIPAY_PUBLIC_KEY,
+        "X-Secret-Key": DALIPAY_SECRET_KEY,
+        "Accept": "application/json",
     }
-    response = requests.post(url, headers=headers, timeout=15)
-    data = response.json() if response.content else {}
-    if response.status_code == 200 and "token" in data:
-        return data["token"]
-    raise Exception(f"Imeshindwa kupata token: {data}")
+    if json_body:
+        h["Content-Type"] = "application/json"
+    return h
 
 
-def initiate_clickpesa_ussd(amount, order_reference, phone):
-    """Anzisha USSD push. Inarudisha (ok: bool, data: dict)."""
-    token = get_clickpesa_token()
-    url = "https://api.clickpesa.com/third-parties/payments/initiate-ussd-push-request"
-    headers = {
-        "Authorization": token,
-        "Content-Type": "application/json",
-    }
+def initiate_dalipay_collection(amount, order_reference, phone):
+    """
+    Anzisha USSD push kupitia Dalipay. Inarudisha (ok: bool, data: dict).
+    Kila jaribio lina external_id mpya (max 30) inayohifadhiwa kwenye PaymentAttempt
+    pamoja na order_reference ya mfumo (ORD/NKR/AGY/WIFI/WINST...).
+    """
+    external_id = f"DP{secrets.token_hex(8)}".upper()
     payload = {
-        "amount": str(amount),
+        "account_number": normalize_phone(phone),
+        "amount": int(amount),
         "currency": "TZS",
-        "orderReference": str(order_reference)[:50],
-        "phoneNumber": normalize_phone(phone),
+        "external_id": external_id,
     }
-    response = requests.post(url, json=payload, headers=headers, timeout=20)
-    data = response.json() if response.content else {}
-    ok = response.status_code in (200, 201)
-    return ok, data
+    url = f"{DALIPAY_BASE_URL}/{DALIPAY_COLLECT_PATH.lstrip('/')}"
+    response = requests.post(url, json=payload, headers=_dalipay_headers(True), timeout=30)
+    try:
+        body = response.json() if response.content else {}
+    except ValueError:
+        body = {"message": "Jibu lisilo sahihi kutoka kwa mtoa huduma wa malipo."}
+    data = body.get("data") if isinstance(body, dict) and isinstance(body.get("data"), dict) else {}
+    if response.ok and data.get("uuid"):
+        db.session.add(PaymentAttempt(
+            external_id=external_id,
+            merchant_ref=str(order_reference)[:80],
+            uuid=data["uuid"],
+            reference=data.get("reference") or "",
+            user_id=session.get("user_id"),
+            amount=int(amount),
+            phone=payload["account_number"],
+            status="processing",
+        ))
+        db.session.commit()
+        return True, data
+    if response.status_code in (401, 403):
+        return False, {"message": "Mfumo wa malipo haupatikani kwa sasa. Wasiliana na admin."}
+    return False, body if isinstance(body, dict) else {}
+
+
+def dalipay_get_status(uuid_value):
+    """Rudisha (status, amount) kutoka Dalipay, au (None, None) kama haikupatikana."""
+    if not uuid_value:
+        return None, None
+    url = f"{DALIPAY_BASE_URL}/{DALIPAY_COLLECT_PATH.lstrip('/')}/{uuid_value}/status"
+    try:
+        res = requests.get(url, headers=_dalipay_headers(), timeout=6)
+        body = res.json()
+    except Exception as e:
+        print(f"dalipay status error: {e}")
+        return None, None
+    if not res.ok:
+        return None, None
+    data = body.get("data") if isinstance(body, dict) and isinstance(body.get("data"), dict) else body
+    if not isinstance(data, dict):
+        return None, None
+    return str(data.get("status", "")).lower(), data.get("amount")
 
 
 def clean_payment_error(data, fallback="Malipo yameshindwa. Jaribu tena."):
@@ -838,7 +889,7 @@ def clean_payment_error(data, fallback="Malipo yameshindwa. Jaribu tena."):
     msg = re.sub(r"\s+", " ", msg).strip()
 
     # Usionyeshe majina ya huduma za malipo kwa user
-    for brand in ("clickpesa", "click pesa", "click-pesa"):
+    for brand in ("dalipay", "dali pay", "dali-pay"):
         if brand in msg.lower():
             msg = ""
             break
@@ -1393,7 +1444,7 @@ def settings():
 
 
 # ---------------------------------------------------------------------------
-# Bundle / Order + ONLINE PAYMENT (ClickPesa)
+# Bundle / Order + ONLINE PAYMENT (Dalipay)
 # ---------------------------------------------------------------------------
 @app.route("/order", methods=["GET", "POST"])
 @login_required
@@ -1464,9 +1515,9 @@ def order():
         new_order.order_reference = order_ref
         db.session.commit()
 
-        if clickpesa_enabled() and price > 0:
+        if dalipay_enabled() and price > 0:
             try:
-                ok, data = initiate_clickpesa_ussd(price, order_ref, payment_phone)
+                ok, data = initiate_dalipay_collection(price, order_ref, payment_phone)
                 if ok:
                     flash(
                         "Asante! Ombi la malipo limeshushwa. Angalia simu yako na uingize PIN. "
@@ -1503,22 +1554,10 @@ def order():
                     print(f"order fail push: {_e}")
                 flash(f"Hitilafu ya malipo: {clean_payment_error(str(e))}", "error")
         else:
-            new_order.status = "pending"
+            new_order.status = "failed"
+            new_order.fail_reason = "Malipo hayapatikani kwa sasa."
             db.session.commit()
-            try:
-                send_push_to_admins(
-                    "Oda mpya (manual)",
-                    f"#{new_order.id} — {amount} → {target_phone} (TSh {price})",
-                    url="/dashboard",
-                    tag=f"order-new-{new_order.id}",
-                )
-            except Exception as e:
-                print(f"new order push: {e}")
-            flash(
-                f"Request imetumwa! Lipa kwa {PAYMENT_NETWORK} {PAYMENT_NUMBER} ({PAYMENT_NAME}). "
-                "Baada ya malipo, wasiliana na chat.",
-                "success",
-            )
+            flash("Mfumo wa malipo haupatikani kwa sasa. Jaribu tena baadaye.", "error")
         return redirect(url_for("profile"))
 
     return render_template(
@@ -1584,7 +1623,7 @@ def update_order_status(order_id):
 
 
 # ---------------------------------------------------------------------------
-# ClickPesa Webhook
+# Dalipay: malipo yanatambuliwa kwa ref (ORD/NKR/AGY/WIFI/WINST)
 # ---------------------------------------------------------------------------
 def _parse_nakala_pay_ref(order_ref):
     """NKR{id} au NKR{id}T{timestamp} → NakalaRequest au None."""
@@ -1595,7 +1634,6 @@ def _parse_nakala_pay_ref(order_ref):
         return None
     try:
         rest = order_ref.strip()[3:]
-        # chukua digits kabla ya T (repay uniqueness)
         part = rest.split("T")[0].split("-")[0]
         nid = int("".join(ch for ch in part if ch.isdigit()) or "0")
         if nid:
@@ -1972,39 +2010,141 @@ def _mark_payment_failed(merchant_ref, reason="Malipo yameshindwa."):
     return False, "not found"
 
 
-@app.route("/webhook/clickpesa", methods=["POST"])
-def clickpesa_webhook():
-    """
-    ClickPesa webhook — malipo yanathibitishwa HAPPA.
-    Events: PAYMENT RECEIVED + PAYMENT FAILED
-    Refs: ORD... (bando) | NKR{id} (nakala)
-    """
+DALIPAY_SUCCESS_STATES = {"success", "successful", "completed", "paid"}
+DALIPAY_FAILED_STATES = {
+    "failed", "cancelled", "canceled", "rejected", "expired", "declined",
+    "timeout", "timed_out", "insufficient_funds", "error", "reversed",
+}
+
+
+def _settle_attempt(attempt, status, paid_amount=None, reason=""):
+    """Tumia matokeo ya Dalipay kwenye PaymentAttempt + oda husika. Salama kuitwa mara nyingi."""
+    status = (status or "").lower()
+
+    if status in DALIPAY_SUCCESS_STATES:
+        if attempt.status == "success":
+            return "success"
+        try:
+            amount_ok = paid_amount is None or int(float(paid_amount)) == int(attempt.amount)
+        except (TypeError, ValueError):
+            amount_ok = False
+        if not amount_ok:
+            print(f"dalipay amount mismatch: {attempt.external_id} paid={paid_amount} expected={attempt.amount}")
+            attempt.status = "failed"
+            attempt.fail_reason = "Kiasi kilicholipwa hakilingani."
+            db.session.commit()
+            _mark_payment_failed(attempt.merchant_ref, attempt.fail_reason)
+            return "failed"
+        attempt.status = "success"
+        attempt.fail_reason = ""
+        db.session.commit()
+        _mark_payment_success(attempt.merchant_ref, attempt.external_id)
+        return "success"
+
+    if status in DALIPAY_FAILED_STATES:
+        if attempt.status != "processing":
+            return attempt.status
+        attempt.status = "failed"
+        attempt.fail_reason = (reason or "Malipo yameshindwa.")[:255]
+        db.session.commit()
+        _mark_payment_failed(attempt.merchant_ref, attempt.fail_reason)
+        return "failed"
+
+    return attempt.status
+
+
+def _has_pending_payment():
+    """True kama user aliyeingia ana malipo yanayosubiri (kwa auto-refresh ya ukurasa)."""
     try:
-        data = request.get_json(force=True, silent=True) or {}
+        uid = session.get("user_id")
     except Exception:
-        data = {}
+        return False
+    if not uid:
+        return False
+    try:
+        return db.session.query(PaymentAttempt.id).filter_by(user_id=uid, status="processing").first() is not None
+    except Exception:
+        db.session.rollback()
+        return False
 
-    event = (data.get("event") or "").upper()
-    payload = data.get("data") or data
 
-    order_ref = (payload.get("orderReference") or payload.get("order_reference") or "").strip()
-    status = (payload.get("status") or "").upper()
-    message = (payload.get("message") or "")[:200]
+def refresh_user_payments(user_id):
+    """Uliza Dalipay hali ya malipo yanayosubiri ya user (webhook ikichelewa/ikikosa)."""
+    now = datetime.utcnow()
+    try:
+        attempts = PaymentAttempt.query.filter_by(user_id=user_id, status="processing").limit(5).all()
+        for a in attempts:
+            if a.checked_at and (now - a.checked_at).total_seconds() < 3:
+                continue
+            a.checked_at = now
+            db.session.commit()
+            status, amount = dalipay_get_status(a.uuid)
+            if status:
+                _settle_attempt(a, status, amount)
+            if a.status == "processing" and (now - a.created_at).total_seconds() > PAYMENT_EXPIRE_SEC:
+                _settle_attempt(a, "timeout", reason="Muda wa malipo umeisha. Jaribu tena.")
+    except Exception as e:
+        db.session.rollback()
+        print(f"refresh_user_payments error: {e}")
 
-    if not order_ref:
-        return jsonify({"ok": False, "error": "No orderReference"}), 400
 
-    paid_ok = event == "PAYMENT RECEIVED" or status in ("SUCCESS", "SETTLED")
-    failed = event == "PAYMENT FAILED" or status == "FAILED"
+@app.before_request
+def _auto_refresh_payments():
+    if request.method != "GET" or request.path.startswith(("/static", "/webhook")):
+        return None
+    uid = session.get("user_id")
+    if uid and dalipay_enabled():
+        refresh_user_payments(uid)
+    return None
 
-    if paid_ok:
-        ok, kind = _mark_payment_success(order_ref)
-        return jsonify({"ok": ok, "type": kind}), 200
-    if failed:
-        ok, kind = _mark_payment_failed(order_ref, message)
-        return jsonify({"ok": ok, "type": kind}), 200
 
-    return jsonify({"ok": True, "ignored": True}), 200
+@app.route("/payment/pending")
+def payment_pending_json():
+    """Kwa JS ya auto-refresh: kuna malipo yanayosubiri? (before_request tayari imesasisha hali)."""
+    return jsonify({"pending": _has_pending_payment()})
+
+
+@app.route("/webhook/dalipay", methods=["POST"])
+def dalipay_webhook():
+    """
+    Dalipay webhook — POST yenye saini ya X-Signature (HMAC-SHA256 ya body kwa callback secret).
+    Events: collection.success | collection.failed
+    """
+    if not DALIPAY_CALLBACK_SECRET:
+        return jsonify({"error": "callback secret not configured"}), 500
+
+    raw_body = request.get_data()
+    signature = (request.headers.get("X-Signature", "") or "").strip()
+    if signature.lower().startswith("sha256="):
+        signature = signature[7:]
+    expected = hmac.new(
+        DALIPAY_CALLBACK_SECRET.encode("utf-8"), raw_body, hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(expected, signature.lower()):
+        print("Invalid Dalipay webhook signature")
+        return jsonify({"error": "invalid signature"}), 401
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8") or "{}")
+    except Exception:
+        return jsonify({"error": "invalid json"}), 400
+
+    event = str(payload.get("event") or "")
+    data = payload.get("data") or {}
+    external_id = data.get("external_id")
+    attempt = PaymentAttempt.query.filter_by(external_id=external_id).first() if external_id else None
+    if not attempt:
+        return jsonify({"status": "unknown_payment"}), 200
+
+    status = str(data.get("status", "")).lower()
+    if event == "collection.success":
+        status = "success"
+    elif event.startswith("collection.") and status not in DALIPAY_FAILED_STATES:
+        status = "failed"
+
+    reason = str(data.get("message") or data.get("reason") or "")[:200]
+    _settle_attempt(attempt, status, data.get("amount"), reason=reason)
+    return jsonify({"status": "received"}), 200
 
 
 # ---------------------------------------------------------------------------
@@ -2561,7 +2701,7 @@ def agency_pay():
         keep_session_alive()
         session["agency_draft"] = draft
 
-        if not (clickpesa_enabled() and AGENCY_SERVICE_FEE > 0):
+        if not (dalipay_enabled() and AGENCY_SERVICE_FEE > 0):
             app_obj.status = "payment_failed"
             app_obj.fail_reason = "Payment disabled"
             db.session.commit()
@@ -2569,7 +2709,7 @@ def agency_pay():
             return redirect(url_for("agency_pay"))
 
         try:
-            ok, data = initiate_clickpesa_ussd(AGENCY_SERVICE_FEE, order_ref, payment_phone)
+            ok, data = initiate_dalipay_collection(AGENCY_SERVICE_FEE, order_ref, payment_phone)
             if ok:
                 flash(
                     f"Ombi la malipo ya TSh {AGENCY_SERVICE_FEE:,} limetumwa kwa {payment_phone}. "
@@ -3493,10 +3633,10 @@ def nakala_pay():
     session.pop("nakala_draft", None)
 
     price = req.price
-    if clickpesa_enabled() and price > 0:
+    if dalipay_enabled() and price > 0:
         try:
             pay_ref = f"NKR{req.id}"
-            ok, data = initiate_clickpesa_ussd(price, pay_ref, payment_phone)
+            ok, data = initiate_dalipay_collection(price, pay_ref, payment_phone)
             if ok:
                 req.status = "awaiting_payment"
                 db.session.commit()
@@ -3529,8 +3669,7 @@ def nakala_pay():
             db.session.commit()
             flash(
                 f"Malipo yameshindwa. Sababu: {reason} "
-                f"Jaribu tena (Lipa Tena) au lipa manual: "
-                f"{PAYMENT_NETWORK} {PAYMENT_NUMBER}.",
+                "Jaribu tena kwa «Lipa Tena».",
                 "error",
             )
         except Exception as e:
@@ -3543,24 +3682,17 @@ def nakala_pay():
                 db.session.rollback()
             flash(
                 f"Malipo yameshindwa. Sababu: {reason} "
-                f"Fungua ombi na ubonyeze «Lipa Tena». Manual: "
-                f"{PAYMENT_NETWORK} {PAYMENT_NUMBER}.",
+                "Fungua ombi na ubonyeze «Lipa Tena».",
                 "error",
             )
     else:
-        try:
-            send_push_to_admins(
-                "Ombi jipya la Nakala (manual)",
-                f"{req.request_code} ({req.service_type})",
-                url="/dashboard",
-                tag=f"nakala-new-{req.id}",
-            )
-        except Exception as e:
-            print(f"nakala new push: {e}")
+        req.status = "payment_failed"
+        req.admin_note = "Malipo hayapatikani kwa sasa."
+        db.session.commit()
         flash(
-            f"Ombi limehifadhiwa! Lipa TSh {price:,} kwa {PAYMENT_NETWORK} {PAYMENT_NUMBER} ({PAYMENT_NAME}). "
-            "Baada ya malipo wasiliana na admin.",
-            "success",
+            "Ombi limehifadhiwa, lakini mfumo wa malipo haupatikani kwa sasa. "
+            "Jaribu «Lipa Tena» baadaye.",
+            "error",
         )
     return redirect(url_for("my_nakala"))
 
@@ -3646,16 +3778,13 @@ def nakala_repay(req_id):
         return redirect(url_for("nakala_repay", req_id=req.id))
 
     price = int(req.price or 0)
-    if not (clickpesa_enabled() and price > 0):
-        flash(
-            f"Lipa manual TSh {price:,} kwa {PAYMENT_NETWORK} {PAYMENT_NUMBER} ({PAYMENT_NAME}).",
-            "error",
-        )
+    if not (dalipay_enabled() and price > 0):
+        flash("Mfumo wa malipo haupatikani kwa sasa. Jaribu tena baadaye.", "error")
         return redirect(url_for("nakala_detail", req_id=req.id))
 
     try:
         pay_ref = f"NKR{req.id}T{int(time.time())}"[:20]
-        ok, data = initiate_clickpesa_ussd(price, pay_ref, payment_phone)
+        ok, data = initiate_dalipay_collection(price, pay_ref, payment_phone)
         if ok:
             req.status = "awaiting_payment"
             req.admin_note = ""
@@ -3682,7 +3811,7 @@ def nakala_repay(req_id):
         db.session.commit()
         flash(
             f"Malipo yameshindwa. Sababu: {reason} "
-            f"Jaribu tena au lipa manual: {PAYMENT_NETWORK} {PAYMENT_NUMBER}.",
+            "Jaribu tena.",
             "error",
         )
     except Exception as e:
@@ -3695,7 +3824,7 @@ def nakala_repay(req_id):
             db.session.rollback()
         flash(
             f"Malipo yameshindwa. Sababu: {reason} "
-            f"Jaribu tena au lipa manual: {PAYMENT_NETWORK} {PAYMENT_NUMBER}.",
+            "Jaribu tena.",
             "error",
         )
     return redirect(url_for("nakala_detail", req_id=req.id))
@@ -4717,9 +4846,9 @@ def wifi_install_pay(req_id):
         req.fail_reason = ""
         db.session.commit()
 
-        if clickpesa_enabled() and amount > 0:
+        if dalipay_enabled() and amount > 0:
             try:
-                ok, data = initiate_clickpesa_ussd(amount, order_ref, phone_n)
+                ok, data = initiate_dalipay_collection(amount, order_ref, phone_n)
                 if ok:
                     flash("Ombi la malipo limetumwa kwenye simu yako. Weka PIN kuthibitisha.", "success")
                 else:
@@ -4737,22 +4866,10 @@ def wifi_install_pay(req_id):
                 db.session.commit()
                 flash(reason, "error")
         else:
-            # fallback: malipo hayajawezeshwa — tuma moja kwa moja
-            req.status = "pending"
-            req.paid_at = datetime.utcnow()
+            req.status = "payment_failed"
+            req.fail_reason = "Malipo hayapatikani kwa sasa."
             db.session.commit()
-            try:
-                send_push_to_admins(
-                    "Ombi jipya la kuagiza Wi-Fi",
-                    f"{req.full_name} · {req.network} · TSh {amount:,}",
-                    url=url_for("admin_wifi_install"),
-                    tag=f"wifi-install-{req.id}",
-                )
-            except Exception as e:
-                print(f"wifi install push: {e}")
-            flash("Ombi lako limetumwa kwa mtoa huduma wetu. Tutawasiliana nawe hivi karibuni.", "success")
-            return redirect(url_for("wifi_install"))
-
+            flash("Mfumo wa malipo haupatikani kwa sasa. Jaribu tena baadaye.", "error")
         return redirect(url_for("wifi_install_pay", req_id=req.id))
 
     return render_template(
@@ -4786,7 +4903,7 @@ def admin_wifi_install():
             flash("Ombi limesasishwa.", "success")
         return redirect(url_for("admin_wifi_install"))
 
-    # Onyesha tu maombi yaliyolipiwa (baada ya ClickPesa webhook)
+    # Onyesha tu maombi yaliyolipiwa (baada ya Dalipay kuthibitisha)
     items = (
         WifiInstallRequest.query
         .filter(WifiInstallRequest.status.in_(["pending", "contacted", "completed", "rejected"]))
@@ -4863,9 +4980,9 @@ def wifi_buy():
     db.session.add(purchase)
     db.session.commit()
 
-    if clickpesa_enabled() and pkg["price"] > 0:
+    if dalipay_enabled() and pkg["price"] > 0:
         try:
-            ok, data = initiate_clickpesa_ussd(pkg["price"], order_ref, payment_phone)
+            ok, data = initiate_dalipay_collection(pkg["price"], order_ref, payment_phone)
             if ok:
                 flash(
                     f"Ombi la malipo limetumwa kwa {payment_phone}. Thibitisha kwenye simu yako.",
